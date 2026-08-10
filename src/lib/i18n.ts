@@ -1,0 +1,96 @@
+import type { Locale } from "./types";
+
+const dict = {
+  appName: { ru: "étagère", en: "étagère" },
+  tagline: {
+    ru: "Твоя библиотека — локально, с синхронизацией на Google Drive",
+    en: "Your library — local, synced to Google Drive",
+  },
+  myLibrary: { ru: "Моя библиотека", en: "My Library" },
+  addBook: { ru: "Добавить PDF", en: "Add PDF" },
+  emptyShelf: {
+    ru: "Полка пока пуста. Загрузи первую книгу.",
+    en: "The shelf is empty. Upload your first book.",
+  },
+  pages: { ru: "стр.", en: "p." },
+  continueReading: { ru: "Продолжить", en: "Continue" },
+  open: { ru: "Открыть", en: "Open" },
+  delete: { ru: "Удалить", en: "Delete" },
+  driveConnect: { ru: "Подключить Google Drive", en: "Connect Google Drive" },
+  driveConnected: { ru: "Google Drive подключён", en: "Google Drive connected" },
+  driveSyncing: { ru: "Синхронизация…", en: "Syncing…" },
+  driveLocalMode: {
+    ru: "Локальный режим — Drive подключится после OAuth",
+    en: "Local mode — Drive connects after OAuth setup",
+  },
+  searchPlaceholder: { ru: "Поиск по книгам…", en: "Search books…" },
+  backToShelf: { ru: "К полке", en: "Back to shelf" },
+  pageOf: { ru: "из", en: "of" },
+  bookmarks: { ru: "Закладки", en: "Bookmarks" },
+  highlights: { ru: "Выделения", en: "Highlights" },
+  quotes: { ru: "Цитаты", en: "Quotes" },
+  notes: { ru: "Заметки", en: "Notes" },
+  addBookmark: { ru: "Закладка", en: "Bookmark" },
+  bookmarkAdded: { ru: "Закладка добавлена", en: "Bookmark added" },
+  saveQuote: { ru: "В цитаты", en: "Save quote" },
+  highlight: { ru: "Выделить", en: "Highlight" },
+  translate: { ru: "Перевести", en: "Translate" },
+  summarize: { ru: "Саммари", en: "Summarize" },
+  aiStub: {
+    ru: "ИИ-заглушка — ответ имитируется локально",
+    en: "AI stub — response is mocked locally",
+  },
+  aiTranslateTitle: { ru: "Перевод", en: "Translation" },
+  aiSummaryTitle: { ru: "Краткое содержание", en: "Summary" },
+  selectedText: { ru: "Выделенный текст", en: "Selected text" },
+  noAnnotations: { ru: "Пока пусто", en: "Nothing here yet" },
+  goToPage: { ru: "Страница", en: "Page" },
+  uploading: { ru: "Загрузка…", en: "Uploading…" },
+  extractingCover: { ru: "Обложка…", en: "Cover…" },
+  removeConfirm: {
+    ru: "Удалить книгу с полки?",
+    en: "Remove this book from the shelf?",
+  },
+  settings: { ru: "Настройки", en: "Settings" },
+  language: { ru: "Язык", en: "Language" },
+  unknownAuthor: { ru: "Без автора", en: "Unknown author" },
+  close: { ru: "Закрыть", en: "Close" },
+  copy: { ru: "Копировать", en: "Copy" },
+  notePlaceholder: { ru: "Заметка к цитате…", en: "Note for quote…" },
+  save: { ru: "Сохранить", en: "Save" },
+  cancel: { ru: "Отмена", en: "Cancel" },
+  previousPage: { ru: "Назад", en: "Previous" },
+  nextPage: { ru: "Вперёд", en: "Next" },
+  zoomIn: { ru: "Крупнее", en: "Zoom in" },
+  zoomOut: { ru: "Мельче", en: "Zoom out" },
+  sidebar: { ru: "Заметки", en: "Notes" },
+  aiPanel: { ru: "ИИ", en: "AI" },
+  pencil: { ru: "Карандаш", en: "Pencil" },
+  eraser: { ru: "Ластик", en: "Eraser" },
+  selectTool: { ru: "Выделение", en: "Select" },
+  marginHint: {
+    ru: "Рисуй на полях справа",
+    en: "Draw in the right margin",
+  },
+  stylusOnly: {
+    ru: "Только стилус",
+    en: "Stylus only",
+  },
+  pressure: { ru: "Нажим", en: "Pressure" },
+  penSize: { ru: "Толщина", en: "Size" },
+  stylusHint: {
+    ru: "Apple Pencil — на iPad (Safari). На Mac: пиши трекпадом или мышью в режиме «Карандаш».",
+    en: "Apple Pencil works on iPad (Safari). On Mac: draw with the trackpad or mouse in Pencil mode.",
+  },
+  removeBookmark: { ru: "Убрать закладку", en: "Remove bookmark" },
+  bookmarked: { ru: "На этой странице", en: "On this page" },
+  clearInk: { ru: "Стереть рисунки на стр.", en: "Clear page ink" },
+  inkNotes: { ru: "Рисунки", en: "Sketches" },
+  jumpTo: { ru: "Перейти", en: "Go" },
+} as const;
+
+export type MessageKey = keyof typeof dict;
+
+export function t(key: MessageKey, locale: Locale): string {
+  return dict[key][locale];
+}
