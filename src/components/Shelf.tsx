@@ -5,13 +5,26 @@ import { useLibraryStore } from "@/store/library";
 import { useSettingsStore } from "@/store/settings";
 import { t } from "@/lib/i18n";
 import { BookCover } from "./BookCover";
+import { BrandMark } from "./BrandMark";
 import { UploadBookButton } from "./UploadBookButton";
 import { LanguageSwitcher } from "./LanguageSwitcher";
+import { ThemeSwitcher } from "./ThemeSwitcher";
+import { useAuthStore } from "@/store/auth";
+import Link from "next/link";
 
 export function Shelf() {
   const locale = useSettingsStore((s) => s.locale);
-  const { books, loading, hydrate, driveConnected, connectDrive } =
-    useLibraryStore();
+  const user = useAuthStore((s) => s.user);
+  const hasPro = useAuthStore((s) => s.hasPro);
+  const {
+    books,
+    loading,
+    hydrate,
+    driveConnected,
+    connectDrive,
+    tagFilter,
+    setTagFilter,
+  } = useLibraryStore();
   const [query, setQuery] = useState("");
   const [driveMsg, setDriveMsg] = useState<string | null>(null);
 
@@ -19,21 +32,51 @@ export function Shelf() {
     void hydrate();
   }, [hydrate]);
 
+  const allTags = useMemo(() => {
+    const s = new Set<string>();
+    books.forEach((b) => b.tags.forEach((t) => s.add(t)));
+    return Array.from(s).sort();
+  }, [books]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return books;
-    return books.filter((b) => b.title.toLowerCase().includes(q));
-  }, [books, query]);
+    return books.filter((b) => {
+      if (tagFilter && !b.tags.includes(tagFilter)) return false;
+      if (!q) return true;
+      return (
+        b.title.toLowerCase().includes(q) ||
+        (b.author ?? "").toLowerCase().includes(q) ||
+        b.tags.some((t) => t.includes(q))
+      );
+    });
+  }, [books, query, tagFilter]);
 
   return (
     <div className="shelf-page">
       <header className="shelf-header">
         <div className="brand-block">
-          <p className="brand">{t("appName", locale)}</p>
+          <BrandMark link={false} size="hero" />
           <p className="tagline">{t("tagline", locale)}</p>
         </div>
         <div className="shelf-actions">
+          <ThemeSwitcher />
           <LanguageSwitcher />
+          <Link href="/pricing" className="btn-ghost">
+            {t("pricing", locale)}
+          </Link>
+          {user ? (
+            <Link
+              href="/account"
+              className={`btn-ghost ${hasPro() ? "is-on" : ""}`}
+            >
+              {t("account", locale)}
+              {hasPro() ? " · Pro" : ""}
+            </Link>
+          ) : (
+            <Link href="/login" className="btn-ghost">
+              {t("login", locale)}
+            </Link>
+          )}
           <button
             type="button"
             className={`btn-ghost ${driveConnected ? "is-on" : ""}`}
@@ -42,7 +85,9 @@ export function Shelf() {
               setDriveMsg(msg);
             }}
           >
-            {driveConnected ? t("driveConnected", locale) : t("driveConnect", locale)}
+            {driveConnected
+              ? t("driveConnected", locale)
+              : t("driveConnect", locale)}
           </button>
           <UploadBookButton />
         </div>
@@ -64,8 +109,33 @@ export function Shelf() {
         />
       </div>
 
+      {allTags.length > 0 && (
+        <div className="tag-filter-row">
+          <span>{t("collections", locale)}:</span>
+          <button
+            type="button"
+            className={`tag-chip ${!tagFilter ? "on" : ""}`}
+            onClick={() => setTagFilter(null)}
+          >
+            {t("allTags", locale)}
+          </button>
+          {allTags.map((tag) => (
+            <button
+              key={tag}
+              type="button"
+              className={`tag-chip ${tagFilter === tag ? "on" : ""}`}
+              onClick={() => setTagFilter(tagFilter === tag ? null : tag)}
+            >
+              {tag}
+            </button>
+          ))}
+        </div>
+      )}
+
       {loading ? (
-        <p className="empty-state">{locale === "ru" ? "Загрузка…" : "Loading…"}</p>
+        <p className="empty-state">
+          {locale === "ru" ? "Загрузка…" : "Loading…"}
+        </p>
       ) : filtered.length === 0 ? (
         <div className="empty-state">
           <p>{t("emptyShelf", locale)}</p>

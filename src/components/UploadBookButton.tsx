@@ -7,18 +7,24 @@ import { t } from "@/lib/i18n";
 
 export function UploadBookButton() {
   const inputRef = useRef<HTMLInputElement>(null);
-  const addPdf = useLibraryStore((s) => s.addPdf);
+  const addBookFile = useLibraryStore((s) => s.addBookFile);
   const locale = useSettingsStore((s) => s.locale);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
 
   async function onFile(file: File | undefined) {
-    if (!file || file.type !== "application/pdf") return;
+    if (!file) return;
+    const ok =
+      file.type === "application/pdf" ||
+      file.name.toLowerCase().endsWith(".pdf") ||
+      file.name.toLowerCase().endsWith(".epub") ||
+      file.type.includes("epub");
+    if (!ok) return;
     setBusy(true);
     setStatus(t("uploading", locale));
     try {
       setStatus(t("extractingCover", locale));
-      await addPdf(file);
+      await addBookFile(file);
       setStatus(null);
     } catch (e) {
       console.error(e);
@@ -34,7 +40,7 @@ export function UploadBookButton() {
       <input
         ref={inputRef}
         type="file"
-        accept="application/pdf"
+        accept="application/pdf,.pdf,application/epub+zip,.epub"
         hidden
         onChange={(e) => void onFile(e.target.files?.[0])}
       />

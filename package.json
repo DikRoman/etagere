@@ -6,11 +6,17 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "pb:up": "docker compose up -d --build",
+    "pb:down": "docker compose down",
+    "pb:serve": "bash pocketbase/start.sh",
+    "pb:superuser": "docker compose exec pocketbase /pb/pocketbase superuser upsert admin@etagere.local changeme123"
   },
   "dependencies": {
+    "jszip": "^3.10.1",
     "next": "16.3.0",
     "pdfjs-dist": "^6.2.108",
+    "pocketbase": "^0.27.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "uuid": "^14.0.1",
@@ -18,6 +24,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/jszip": "^3.4.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

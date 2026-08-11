@@ -1,36 +1,45 @@
 # étagère
 
-Локальная PDF-читалка в духе Apple Books: полка с обложками, закладки, выделения, цитаты, карандаш, заглушка ИИ (перевод / саммари). Хранение — IndexedDB сейчас, синхронизация с Google Drive — через адаптер (OAuth stub).
+Локальная читалка PDF/EPUB + PocketBase (auth, ЛК, подписка-заглушка).
 
-## Запуск
+## Быстрый старт
 
 ```bash
+# 1) PocketBase (нужен Docker ИЛИ нативный бинарник)
+
+# вариант A — Docker
+docker compose up -d --build
+docker compose exec pocketbase /pb/pocketbase superuser upsert admin@etagere.local changeme123
+
+# вариант B — без Docker (macOS/Linux)
+npm run pb:serve
+# в другом терминале, один раз:
+./pocketbase/pocketbase superuser upsert admin@etagere.local changeme123 --dir=./pocketbase/pb_data
+
+# 2) Next.js
+cp .env.example .env.local
 npm install
 npm run dev
 ```
 
-Открой [http://localhost:3000](http://localhost:3000).
+- Приложение: http://localhost:3000  
+- PocketBase admin: http://127.0.0.1:8090/_/  
+- Регистрация / вход / кабинет: `/register`, `/login`, `/account`  
+- Тарифы: `/pricing`  
 
-## Возможности
+В кабинете кнопка **«Включить Pro (заглушка)»** пишет план в коллекцию `subscriptions` (нужны admin email/password в `.env.local`). Позже сюда встанет ЮKassa.
 
-- Полка с обложками (первый кадр PDF)
-- Вертикальный скролл страниц
-- Закладки, цветные выделения, цитаты, рукописные заметки
-- Поддержка Apple Pencil / стилуса (нажим) и трекпада
-- RU / EN интерфейс
-- ИИ: `/api/ai/translate` и `/api/ai/summarize` — заглушки
-- Google Drive: кнопка «Подключить», реальный OAuth после `NEXT_PUBLIC_GOOGLE_CLIENT_ID`
+## Структура PocketBase
 
-## Google Drive
+Коллекции (миграция `pocketbase/pb_migrations/`):
 
-1. Создай OAuth Client ID в Google Cloud Console (тип Web)
-2. Скопируй `.env.example` → `.env.local` и вставь `NEXT_PUBLIC_GOOGLE_CLIENT_ID`
-3. Сейчас connect/sync — stub; PDF и заметки уже пишутся в IndexedDB и готовы к upload в папку `étagère` на Drive
+- `users` — auth  
+- `subscriptions` — plan `free|pro`, status, expires_at  
+- `books` — облачные книги (пока UI локальный)  
+- `annotations` — JSON заметок  
 
-## Структура
+## Стек
 
-- `src/components/Shelf.tsx` — полка
-- `src/components/reader/*` — читалка
-- `src/lib/storage/local.ts` — IndexedDB
-- `src/lib/storage/drive.ts` — Drive adapter
-- `src/app/api/ai/*` — AI stubs
+- Next.js 16 + IndexedDB (офлайн-читалка)  
+- PocketBase (API, auth, будущий синк файлов)  
+- ЮKassa — следующий шаг для реальной оплаты  

@@ -106,6 +106,23 @@ export function PdfPage({
         span.style.top = `${top}px`;
         span.style.fontSize = `${Math.max(fontHeight, 1)}px`;
         span.style.fontFamily = "sans-serif";
+        span.style.cursor = "text";
+        span.addEventListener("click", (ev) => {
+          if (useReaderStore.getState().tool !== "select") return;
+          const sel = window.getSelection()?.toString().trim();
+          if (sel && sel.length > 1) return; // drag selection handled separately
+          const raw = (ev.target as HTMLElement).textContent ?? "";
+          const word = raw.replace(/[^\p{L}\p{N}'’-]+/gu, " ").trim().split(/\s+/)[0];
+          if (!word || word.length < 2) return;
+          ev.stopPropagation();
+          const rect = (ev.target as HTMLElement).getBoundingClientRect();
+          useReaderStore.getState().setSelection({
+            text: word,
+            page: pageNumber,
+            rects: [],
+            screen: { x: rect.left + rect.width / 2, y: rect.top },
+          });
+        });
         textLayer.appendChild(span);
       }
       setRendered(true);
@@ -205,7 +222,9 @@ export function PdfPage({
         </div>
 
         {visible && (
-          <div className="ink-overlay">
+          <div
+            className={`ink-overlay ${tool !== "select" ? "ink-drawing" : ""}`}
+          >
             <InkLayer
               page={pageNumber}
               width={totalW}

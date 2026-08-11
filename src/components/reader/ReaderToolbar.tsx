@@ -2,6 +2,7 @@
 
 import { useSettingsStore } from "@/store/settings";
 import { useReaderStore } from "@/store/reader";
+import { useLibraryStore } from "@/store/library";
 import { t } from "@/lib/i18n";
 import {
   HIGHLIGHT_COLORS,
@@ -10,14 +11,25 @@ import {
   type ReaderTool,
 } from "@/lib/types";
 import { stubSummarize, stubTranslate } from "@/lib/ai";
+import { annotationsToMarkdown, downloadMarkdown } from "@/lib/export";
+import { getAnnotations, getBook } from "@/lib/storage/local";
+import type { PDFDocumentProxy } from "pdfjs-dist";
+import { BookSearchPanel } from "./BookSearchPanel";
 
 interface Props {
   title: string;
   pageCount: number;
+  bookId: string;
+  pdf: PDFDocumentProxy | null;
 }
 
-export function ReaderToolbar({ title, pageCount }: Props) {
+export function ReaderToolbar({ title, pageCount, bookId, pdf }: Props) {
   const locale = useSettingsStore((s) => s.locale);
+  const spread = useSettingsStore((s) => s.spread);
+  const setSpread = useSettingsStore((s) => s.setSpread);
+  const theme = useSettingsStore((s) => s.theme);
+  const setTheme = useSettingsStore((s) => s.setTheme);
+
   const page = useReaderStore((s) => s.page);
   const scale = useReaderStore((s) => s.scale);
   const goToPage = useReaderStore((s) => s.goToPage);
@@ -44,6 +56,9 @@ export function ReaderToolbar({ title, pageCount }: Props) {
   const setAiOpen = useReaderStore((s) => s.setAiOpen);
   const setAiResult = useReaderStore((s) => s.setAiResult);
   const selection = useReaderStore((s) => s.selection);
+  const toc = useReaderStore((s) => s.toc);
+  const syncBook = useLibraryStore((s) => s.syncBook);
+  const pullBookAnnotations = useLibraryStore((s) => s.pullBookAnnotations);
 
   const bookmarked = isPageBookmarked(page);
 
@@ -51,8 +66,8 @@ export function ReaderToolbar({ title, pageCount }: Props) {
     const text =
       selection?.text ||
       (locale === "ru"
-        ? `Страница ${page} книги «${title}». Выдели фрагмент для точного саммари.`
-        : `Page ${page} of “${title}”. Select text for a more accurate summary.`);
+        ? `Страница ${page} книги «${title}».`
+        : `Page ${page} of “${title}”.`);
     setAiOpen(true);
     setAiResult({
       title: t("aiSummaryTitle", locale),
@@ -62,15 +77,51 @@ export function ReaderToolbar({ title, pageCount }: Props) {
     setAiResult({ title: t("aiSummaryTitle", locale), body: result });
   }
 
+  async function runChapterSummary() {
+    const chapter =
+      [...toc].reverse().find((c) => c.page <= page) ??
+      toc.find((c) => c.page >= page);
+    const label = chapter?.title ?? `p. ${page}`;
+    setAiOpen(true);
+    setAiResult({
+      title: t("chapterSummary", locale),
+      body: locale === "ru" ? "Думаю…" : "Thinking…",
+    });
+    const result = await stubSummarize(
+      locale === "ru"
+        ? `Глава «${label}» книги «${title}» (около стр. ${page}). Кратко перескажи.`
+        : `Chapter “${label}” of “${title}” (around p. ${page}). Summarize briefly.`,
+      locale,
+    );
+    setAiResult({ title: t("chapterSummary", locale), body: result });
+  }
+
   async function runTranslateSelection() {
     if (!selection?.text) return;
     setAiOpen(true);
     setAiResult({
-      title: t("aiTranslateTitle", locale),
+      title:
+        selection.text.split(/\s+/).length <= 2
+          ? t("wordTranslate", locale)
+          : t("aiTranslateTitle", locale),
       body: locale === "ru" ? "Перевожу…" : "Translating…",
     });
     const result = await stubTranslate(selection.text, locale);
-    setAiResult({ title: t("aiTranslateTitle", locale), body: result });
+    setAiResult({
+      title:
+        selection.text.split(/\s+/).length <= 2
+          ? t("wordTranslate", locale)
+          : t("aiTranslateTitle", locale),
+      body: result,
+    });
+  }
+
+  async function exportMd() {
+    const book = await getBook(bookId);
+    if (!book) return;
+    const ann = await getAnnotations(bookId);
+    const md = annotationsToMarkdown(book, ann, locale);
+    downloadMarkdown(`${book.title}-notes.md`, md);
   }
 
   function toolBtn(id: ReaderTool, label: string) {
@@ -110,47 +161,76 @@ export function ReaderToolbar({ title, pageCount }: Props) {
             {t("pageOf", locale)} {pageCount}
           </span>
         </label>
-        <button
-          type="button"
-          className="icon-btn"
-          onClick={() => setScale(scale - 0.1)}
-          title={t("zoomOut", locale)}
-        >
+        <button type="button" className="icon-btn" onClick={() => setScale(scale - 0.1)}>
           −
         </button>
-        <button
-          type="button"
-          className="icon-btn"
-          onClick={() => setScale(scale + 0.1)}
-          title={t("zoomIn", locale)}
-        >
+        <button type="button" className="icon-btn" onClick={() => setScale(scale + 0.1)}>
           +
         </button>
+
+        <button
+          type="button"
+          className={`btn-ghost compact ${spread ? "is-on" : ""}`}
+          onClick={() => setSpread(!spread)}
+        >
+          {t("spread", locale)}
+        </button>
+
+        <div className="lang-switch theme-switch">
+          {(["day", "paper", "night"] as const).map((th) => (
+            <button
+              key={th}
+              type="button"
+              className={theme === th ? "active" : ""}
+              onClick={() => setTheme(th)}
+            >
+              {th === "day"
+                ? t("themeDay", locale)
+                : th === "paper"
+                  ? t("themePaper", locale)
+                  : t("themeNight", locale)}
+            </button>
+          ))}
+        </div>
 
         <button
           type="button"
           className={`btn-ghost compact ${bookmarked ? "is-on" : ""}`}
           onClick={() => void toggleBookmark(page)}
         >
-          {bookmarked ? `★ ${t("bookmarked", locale)}` : `☆ ${t("addBookmark", locale)}`}
+          {bookmarked ? `★` : `☆`} {t("addBookmark", locale)}
         </button>
 
         <button
           type="button"
+          className={`btn-ghost compact ${sidebarOpen && sidebarTab === "toc" ? "is-on" : ""}`}
+          onClick={() => setSidebarTab("toc")}
+        >
+          {t("toc", locale)}
+        </button>
+        <button
+          type="button"
           className={`btn-ghost compact ${sidebarOpen && sidebarTab === "bookmarks" ? "is-on" : ""}`}
-          onClick={() => {
-            if (sidebarOpen && sidebarTab === "bookmarks") {
-              setSidebarOpen(false);
-            } else {
-              setSidebarTab("bookmarks");
-            }
-          }}
+          onClick={() => setSidebarTab("bookmarks")}
         >
           {t("bookmarks", locale)}
         </button>
+        <button
+          type="button"
+          className={`btn-ghost compact ${sidebarOpen && sidebarTab === "chat" ? "is-on" : ""}`}
+          onClick={() => setSidebarTab("chat")}
+        >
+          {t("chat", locale)}
+        </button>
+        <button
+          type="button"
+          className={`btn-ghost compact ${sidebarOpen && sidebarTab === "cards" ? "is-on" : ""}`}
+          onClick={() => setSidebarTab("cards")}
+        >
+          {t("cards", locale)}
+        </button>
 
         <span className="tool-sep" />
-
         {toolBtn("select", t("selectTool", locale))}
         {toolBtn("pen", t("pencil", locale))}
         {toolBtn("eraser", t("eraser", locale))}
@@ -168,8 +248,7 @@ export function ReaderToolbar({ title, pageCount }: Props) {
                 />
               ))}
             </div>
-            <label className="pen-size" title={t("penSize", locale)}>
-              <span>{t("penSize", locale)}</span>
+            <label className="pen-size">
               <input
                 type="range"
                 min={0.8}
@@ -208,12 +287,8 @@ export function ReaderToolbar({ title, pageCount }: Props) {
           </button>
         )}
 
-        {tool === "pen" && (
-          <p className="stylus-hint">{t("stylusHint", locale)}</p>
-        )}
-
         {tool === "select" && (
-          <div className="color-row" title={t("highlight", locale)}>
+          <div className="color-row">
             {(Object.keys(HIGHLIGHT_COLORS) as HighlightColor[]).map((c) => (
               <button
                 key={c}
@@ -225,7 +300,6 @@ export function ReaderToolbar({ title, pageCount }: Props) {
                     .replace("0.45", "0.9"),
                 }}
                 onClick={() => setActiveColor(c)}
-                aria-label={HIGHLIGHT_COLORS[c].label[locale]}
               />
             ))}
           </div>
@@ -248,6 +322,30 @@ export function ReaderToolbar({ title, pageCount }: Props) {
         </button>
         <button
           type="button"
+          className="btn-ghost compact"
+          onClick={() => void runChapterSummary()}
+        >
+          {t("chapterSummary", locale)}
+        </button>
+        <button type="button" className="btn-ghost compact" onClick={() => void exportMd()}>
+          {t("exportMd", locale)}
+        </button>
+        <button
+          type="button"
+          className="btn-ghost compact"
+          onClick={() => void syncBook(bookId).then((m) => alert(m))}
+        >
+          ☁
+        </button>
+        <button
+          type="button"
+          className="btn-ghost compact"
+          onClick={() => void pullBookAnnotations(bookId).then((m) => alert(m))}
+        >
+          {t("drivePull", locale)}
+        </button>
+        <button
+          type="button"
           className={`btn-ghost compact ${sidebarOpen && sidebarTab === "notes" ? "is-on" : ""}`}
           onClick={() => {
             if (sidebarOpen && sidebarTab === "notes") setSidebarOpen(false);
@@ -257,6 +355,7 @@ export function ReaderToolbar({ title, pageCount }: Props) {
           {t("sidebar", locale)}
         </button>
       </div>
+      <BookSearchPanel pdf={pdf} />
     </header>
   );
 }

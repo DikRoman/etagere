@@ -1,10 +1,15 @@
 export type Locale = "ru" | "en";
-
+export type ReaderTheme = "day" | "paper" | "night";
 export type HighlightColor = "yellow" | "green" | "blue" | "coral";
-
 export type ReaderTool = "select" | "pen" | "eraser";
-
-export type SidebarTab = "bookmarks" | "notes";
+export type SidebarTab =
+  | "bookmarks"
+  | "notes"
+  | "toc"
+  | "search"
+  | "chat"
+  | "cards";
+export type BookFormat = "pdf" | "epub";
 
 export interface TextRect {
   x: number;
@@ -40,11 +45,9 @@ export interface Quote {
   createdAt: string;
 }
 
-/** Handwritten stroke; coords are 0–1 relative to page+margin box */
 export interface InkPoint {
   x: number;
   y: number;
-  /** Pressure 0–1 (Apple Pencil / Force Touch when available) */
   p?: number;
 }
 
@@ -58,17 +61,48 @@ export interface InkStroke {
   createdAt: string;
 }
 
+export interface Flashcard {
+  id: string;
+  bookId: string;
+  front: string;
+  back: string;
+  sourcePage?: number;
+  createdAt: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+}
+
 export interface BookAnnotations {
   highlights: Highlight[];
   bookmarks: Bookmark[];
   quotes: Quote[];
   ink: InkStroke[];
+  flashcards: Flashcard[];
+  chat: ChatMessage[];
+}
+
+export interface TocItem {
+  title: string;
+  page: number;
+  children?: TocItem[];
+}
+
+export interface EpubChapter {
+  id: string;
+  title: string;
+  html: string;
 }
 
 export interface BookMeta {
   id: string;
   title: string;
   author?: string;
+  format: BookFormat;
   pageCount: number;
   coverDataUrl?: string;
   localFileKey: string;
@@ -78,12 +112,9 @@ export interface BookMeta {
   addedAt: string;
   updatedAt: string;
   sizeBytes: number;
-}
-
-export interface LibraryState {
-  books: BookMeta[];
-  driveConnected: boolean;
-  driveFolderId?: string;
+  tags: string[];
+  /** For EPUB: chapter count mirrors pageCount; chapters stored separately */
+  syncedAt?: string;
 }
 
 export const HIGHLIGHT_COLORS: Record<

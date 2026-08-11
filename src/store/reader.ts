@@ -3,12 +3,15 @@ import type {
   BookAnnotations,
   HighlightColor,
   InkStroke,
+  Locale,
   ReaderTool,
   SidebarTab,
   TextRect,
+  TocItem,
 } from "../lib/types";
 import { PEN_COLORS } from "../lib/types";
 import * as local from "../lib/storage/local";
+import { stubChat, stubFlashcards } from "../lib/ai";
 
 interface ReaderStore {
   bookId: string | null;
@@ -16,11 +19,11 @@ interface ReaderStore {
   page: number;
   scale: number;
   annotations: BookAnnotations;
+  toc: TocItem[];
   activeColor: HighlightColor;
   tool: ReaderTool;
   penColor: string;
   penWidth: number;
-  /** Ignore finger/touch — Apple Pencil / stylus only (good on iPad) */
   stylusOnly: boolean;
   pressureEnabled: boolean;
   sidebarOpen: boolean;
@@ -35,9 +38,8 @@ interface ReaderStore {
     screen: { x: number; y: number };
   } | null;
   setBook: (bookId: string, page: number, pageCount: number) => Promise<void>;
-  /** Update visible page from scroll (no jump). */
+  setToc: (toc: TocItem[]) => void;
   setPageFromScroll: (page: number) => void;
-  /** Jump to page (toolbar / bookmark). */
   goToPage: (page: number) => Promise<void>;
   clearScrollRequest: () => void;
   setScale: (scale: number) => void;
@@ -58,7 +60,9 @@ interface ReaderStore {
   addHighlightFromSelection: () => Promise<void>;
   toggleBookmark: (page: number, label?: string) => Promise<void>;
   addQuoteFromSelection: (note?: string) => Promise<void>;
-  addInkStroke: (stroke: Omit<InkStroke, "id" | "createdAt" | "bookId">) => Promise<void>;
+  addInkStroke: (
+    stroke: Omit<InkStroke, "id" | "createdAt" | "bookId">,
+  ) => Promise<void>;
   eraseInkNear: (page: number, x: number, y: number, radius?: number) => Promise<void>;
   clearPageInk: (page: number) => Promise<void>;
   removeHighlight: (id: string) => Promise<void>;
@@ -66,14 +70,30 @@ interface ReaderStore {
   removeQuote: (id: string) => Promise<void>;
   removeInkStroke: (id: string) => Promise<void>;
   isPageBookmarked: (page: number) => boolean;
+  generateFlashcards: (locale: Locale) => Promise<void>;
+  sendChat: (
+    question: string,
+    bookTitle: string,
+    locale: Locale,
+  ) => Promise<void>;
 }
+
+const emptyAnn = (): BookAnnotations => ({
+  highlights: [],
+  bookmarks: [],
+  quotes: [],
+  ink: [],
+  flashcards: [],
+  chat: [],
+});
 
 export const useReaderStore = create<ReaderStore>((set, get) => ({
   bookId: null,
   pageCount: 0,
   page: 1,
   scale: 1.1,
-  annotations: { highlights: [], bookmarks: [], quotes: [], ink: [] },
+  annotations: emptyAnn(),
+  toc: [],
   activeColor: "yellow",
   tool: "select",
   penColor: PEN_COLORS[0],
@@ -94,6 +114,7 @@ export const useReaderStore = create<ReaderStore>((set, get) => ({
       page,
       pageCount,
       annotations,
+      toc: [],
       selection: null,
       aiResult: null,
       scrollRequest: page,
@@ -102,6 +123,8 @@ export const useReaderStore = create<ReaderStore>((set, get) => ({
       tool: "select",
     });
   },
+
+  setToc: (toc) => set({ toc }),
 
   setPageFromScroll: (page) => {
     const { bookId, page: cur } = get();
@@ -118,7 +141,6 @@ export const useReaderStore = create<ReaderStore>((set, get) => ({
   },
 
   clearScrollRequest: () => set({ scrollRequest: null }),
-
   setScale: (scale) => set({ scale: Math.min(2.5, Math.max(0.55, scale)) }),
   setActiveColor: (activeColor) => set({ activeColor }),
   setTool: (tool) => set({ tool, selection: null }),
@@ -141,8 +163,7 @@ export const useReaderStore = create<ReaderStore>((set, get) => ({
   reloadAnnotations: async () => {
     const { bookId } = get();
     if (!bookId) return;
-    const annotations = await local.getAnnotations(bookId);
-    set({ annotations });
+    set({ annotations: await local.getAnnotations(bookId) });
   },
 
   addHighlightFromSelection: async () => {
@@ -165,9 +186,8 @@ export const useReaderStore = create<ReaderStore>((set, get) => ({
     const { bookId, annotations } = get();
     if (!bookId) return;
     const existing = annotations.bookmarks.find((b) => b.page === page);
-    if (existing) {
-      await local.removeBookmark(bookId, existing.id);
-    } else {
+    if (existing) await local.removeBookmark(bookId, existing.id);
+    else {
       await local.addBookmark({
         id: crypto.randomUUID(),
         bookId,
@@ -246,6 +266,62 @@ export const useReaderStore = create<ReaderStore>((set, get) => ({
     const { bookId } = get();
     if (!bookId) return;
     await local.removeInkStroke(bookId, id);
+    await get().reloadAnnotations();
+  },
+
+  generateFlashcards: async (locale) => {
+    const { bookId, annotations } = get();
+    if (!bookId) return;
+    const snippets = [
+      ...annotations.quotes.map((q) => q.text),
+      ...annotations.highlights.map((h) => h.text),
+    ].slice(0, 12);
+    if (!snippets.length) return;
+    const raw = await stubFlashcards(snippets, locale);
+    const cards = raw.map((c, i) => ({
+      id: crypto.randomUUID(),
+      bookId,
+      front: c.front,
+      back: c.back,
+      sourcePage:
+        annotations.quotes[i]?.page ?? annotations.highlights[i]?.page,
+      createdAt: new Date().toISOString(),
+    }));
+    await local.setFlashcards(bookId, cards);
+    await get().reloadAnnotations();
+    set({ sidebarTab: "cards", sidebarOpen: true });
+  },
+
+  sendChat: async (question, bookTitle, locale) => {
+    const { bookId, annotations, page } = get();
+    if (!bookId || !question.trim()) return;
+    const userMsg = {
+      id: crypto.randomUUID(),
+      role: "user" as const,
+      content: question.trim(),
+      createdAt: new Date().toISOString(),
+    };
+    await local.appendChat(bookId, [userMsg]);
+    await get().reloadAnnotations();
+
+    const context = [
+      ...annotations.quotes.slice(-3).map((q) => q.text),
+      ...annotations.highlights.slice(-3).map((h) => h.text),
+    ].join("\n");
+    const answer = await stubChat(
+      question,
+      bookTitle,
+      `page ${page}\n${context}`,
+      locale,
+    );
+    await local.appendChat(bookId, [
+      {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: answer,
+        createdAt: new Date().toISOString(),
+      },
+    ]);
     await get().reloadAnnotations();
   },
 }));

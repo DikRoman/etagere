@@ -1,15 +1,47 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { useSettingsStore } from "@/store/settings";
 import { useReaderStore } from "@/store/reader";
 import { t } from "@/lib/i18n";
-import { HIGHLIGHT_COLORS } from "@/lib/types";
+import { HIGHLIGHT_COLORS, type TocItem } from "@/lib/types";
 
-export function ReaderSidebar() {
+function TocTree({
+  items,
+  depth = 0,
+}: {
+  items: TocItem[];
+  depth?: number;
+}) {
+  const goToPage = useReaderStore((s) => s.goToPage);
+  return (
+    <ul className={depth ? "toc-nested" : undefined}>
+      {items.map((it, i) => (
+        <li key={`${it.title}-${it.page}-${i}`}>
+          <button
+            type="button"
+            className="ann-link"
+            style={{ paddingLeft: `${0.65 + depth * 0.6}rem` }}
+            onClick={() => void goToPage(it.page)}
+          >
+            <span className="ann-text">{it.title}</span>
+            <span className="ann-page">p. {it.page}</span>
+          </button>
+          {it.children?.length ? (
+            <TocTree items={it.children} depth={depth + 1} />
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export function ReaderSidebar({ bookTitle }: { bookTitle: string }) {
   const locale = useSettingsStore((s) => s.locale);
   const open = useReaderStore((s) => s.sidebarOpen);
   const tab = useReaderStore((s) => s.sidebarTab);
   const annotations = useReaderStore((s) => s.annotations);
+  const toc = useReaderStore((s) => s.toc);
   const page = useReaderStore((s) => s.page);
   const goToPage = useReaderStore((s) => s.goToPage);
   const removeHighlight = useReaderStore((s) => s.removeHighlight);
@@ -19,28 +51,48 @@ export function ReaderSidebar() {
   const setSidebarOpen = useReaderStore((s) => s.setSidebarOpen);
   const setSidebarTab = useReaderStore((s) => s.setSidebarTab);
   const toggleBookmark = useReaderStore((s) => s.toggleBookmark);
+  const generateFlashcards = useReaderStore((s) => s.generateFlashcards);
+  const sendChat = useReaderStore((s) => s.sendChat);
+
+  const [chatInput, setChatInput] = useState("");
+  const [cardIndex, setCardIndex] = useState(0);
+  const [flipped, setFlipped] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const cards = annotations.flashcards;
+  const currentCard = cards[cardIndex % Math.max(cards.length, 1)];
+
+  const tabs = useMemo(
+    () =>
+      [
+        ["bookmarks", t("bookmarks", locale)],
+        ["toc", t("toc", locale)],
+        ["notes", t("notes", locale)],
+        ["chat", t("chat", locale)],
+        ["cards", t("cards", locale)],
+      ] as const,
+    [locale],
+  );
 
   if (!open) return null;
 
   return (
     <aside className="reader-sidebar">
       <div className="sidebar-head">
-        <div className="sidebar-tabs">
-          <button
-            type="button"
-            className={tab === "bookmarks" ? "on" : ""}
-            onClick={() => setSidebarTab("bookmarks")}
-          >
-            {t("bookmarks", locale)}
-            <span className="tab-count">{annotations.bookmarks.length}</span>
-          </button>
-          <button
-            type="button"
-            className={tab === "notes" ? "on" : ""}
-            onClick={() => setSidebarTab("notes")}
-          >
-            {t("notes", locale)}
-          </button>
+        <div className="sidebar-tabs wrap">
+          {tabs.map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              className={tab === id ? "on" : ""}
+              onClick={() => setSidebarTab(id)}
+            >
+              {label}
+              {id === "bookmarks" && (
+                <span className="tab-count">{annotations.bookmarks.length}</span>
+              )}
+            </button>
+          ))}
         </div>
         <button
           type="button"
@@ -51,7 +103,7 @@ export function ReaderSidebar() {
         </button>
       </div>
 
-      {tab === "bookmarks" ? (
+      {tab === "bookmarks" && (
         <section className="bookmark-panel">
           <button
             type="button"
@@ -62,7 +114,6 @@ export function ReaderSidebar() {
               ? t("removeBookmark", locale)
               : `${t("addBookmark", locale)} · ${page}`}
           </button>
-
           {annotations.bookmarks.length === 0 ? (
             <p className="muted">{t("noAnnotations", locale)}</p>
           ) : (
@@ -81,7 +132,6 @@ export function ReaderSidebar() {
                       <span>
                         {t("goToPage", locale)} {b.page}
                       </span>
-                      {b.label ? <span className="ann-page">{b.label}</span> : null}
                     </button>
                     <button
                       type="button"
@@ -95,7 +145,19 @@ export function ReaderSidebar() {
             </ul>
           )}
         </section>
-      ) : (
+      )}
+
+      {tab === "toc" && (
+        <section>
+          {toc.length === 0 ? (
+            <p className="muted">{t("noToc", locale)}</p>
+          ) : (
+            <TocTree items={toc} />
+          )}
+        </section>
+      )}
+
+      {tab === "notes" && (
         <>
           <section>
             <h3>{t("highlights", locale)}</h3>
@@ -129,7 +191,6 @@ export function ReaderSidebar() {
               </ul>
             )}
           </section>
-
           <section>
             <h3>{t("quotes", locale)}</h3>
             {annotations.quotes.length === 0 ? (
@@ -146,7 +207,6 @@ export function ReaderSidebar() {
                       >
                         “{q.text.slice(0, 160)}”
                       </button>
-                      {q.note ? <p className="note">{q.note}</p> : null}
                     </blockquote>
                     <button
                       type="button"
@@ -160,39 +220,12 @@ export function ReaderSidebar() {
               </ul>
             )}
           </section>
-
           <section>
             <h3>{t("inkNotes", locale)}</h3>
             {annotations.ink.length === 0 ? (
               <p className="muted">{t("noAnnotations", locale)}</p>
             ) : (
               <ul>
-                {Object.entries(
-                  annotations.ink.reduce<Record<number, number>>((acc, s) => {
-                    acc[s.page] = (acc[s.page] ?? 0) + 1;
-                    return acc;
-                  }, {}),
-                )
-                  .map(([p, count]) => ({ page: Number(p), count }))
-                  .sort((a, b) => a.page - b.page)
-                  .map(({ page: p, count }) => (
-                    <li key={p}>
-                      <button
-                        type="button"
-                        className="ann-link"
-                        onClick={() => void goToPage(p)}
-                      >
-                        {t("goToPage", locale)} {p}
-                        <span className="ann-page">
-                          {count} {locale === "ru" ? "штрих." : "strokes"}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-              </ul>
-            )}
-            {annotations.ink.length > 0 && (
-              <ul className="ink-stroke-list">
                 {annotations.ink
                   .slice()
                   .reverse()
@@ -204,10 +237,7 @@ export function ReaderSidebar() {
                         className="ann-link"
                         onClick={() => void goToPage(s.page)}
                       >
-                        <span
-                          className="dot"
-                          style={{ background: s.color }}
-                        />
+                        <span className="dot" style={{ background: s.color }} />
                         p. {s.page}
                       </button>
                       <button
@@ -223,6 +253,97 @@ export function ReaderSidebar() {
             )}
           </section>
         </>
+      )}
+
+      {tab === "chat" && (
+        <section className="chat-panel">
+          <div className="chat-log">
+            {annotations.chat.length === 0 ? (
+              <p className="muted">{t("aiStub", locale)}</p>
+            ) : (
+              annotations.chat.map((m) => (
+                <div key={m.id} className={`chat-bubble ${m.role}`}>
+                  {m.content}
+                </div>
+              ))
+            )}
+          </div>
+          <form
+            className="chat-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const q = chatInput.trim();
+              if (!q || busy) return;
+              setBusy(true);
+              setChatInput("");
+              void sendChat(q, bookTitle, locale).finally(() => setBusy(false));
+            }}
+          >
+            <input
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              placeholder={t("chatPlaceholder", locale)}
+            />
+            <button type="submit" className="btn-primary compact" disabled={busy}>
+              {t("send", locale)}
+            </button>
+          </form>
+        </section>
+      )}
+
+      {tab === "cards" && (
+        <section className="cards-panel">
+          <button
+            type="button"
+            className="btn-ghost"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              void generateFlashcards(locale).finally(() => {
+                setBusy(false);
+                setCardIndex(0);
+                setFlipped(false);
+              });
+            }}
+          >
+            {t("makeCards", locale)}
+          </button>
+          {cards.length === 0 ? (
+            <p className="muted">{t("noCards", locale)}</p>
+          ) : (
+            <>
+              <button
+                type="button"
+                className={`flashcard ${flipped ? "flipped" : ""}`}
+                onClick={() => setFlipped((f) => !f)}
+              >
+                {flipped ? currentCard.back : currentCard.front}
+              </button>
+              <div className="card-nav">
+                <button
+                  type="button"
+                  className="btn-ghost compact"
+                  onClick={() => setFlipped((f) => !f)}
+                >
+                  {t("flip", locale)}
+                </button>
+                <button
+                  type="button"
+                  className="btn-ghost compact"
+                  onClick={() => {
+                    setCardIndex((i) => (i + 1) % cards.length);
+                    setFlipped(false);
+                  }}
+                >
+                  {t("nextCard", locale)}
+                </button>
+              </div>
+              <p className="muted">
+                {cardIndex + 1} / {cards.length}
+              </p>
+            </>
+          )}
+        </section>
       )}
     </aside>
   );

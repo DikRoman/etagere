@@ -2,9 +2,12 @@ import type {
   BookAnnotations,
   BookMeta,
   Bookmark,
+  EpubChapter,
+  Flashcard,
   Highlight,
   InkStroke,
   Quote,
+  ChatMessage,
 } from "../types";
 
 function normalizeAnnotations(
@@ -15,14 +18,25 @@ function normalizeAnnotations(
     bookmarks: row?.bookmarks ?? [],
     quotes: row?.quotes ?? [],
     ink: row?.ink ?? [],
+    flashcards: row?.flashcards ?? [],
+    chat: row?.chat ?? [],
+  };
+}
+
+function normalizeBook(b: BookMeta): BookMeta {
+  return {
+    ...b,
+    format: b.format ?? "pdf",
+    tags: b.tags ?? [],
   };
 }
 
 const DB_NAME = "bookshelf-db";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const BOOKS_STORE = "books";
 const FILES_STORE = "files";
 const ANNOTATIONS_STORE = "annotations";
+const EPUB_STORE = "epubChapters";
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -37,6 +51,9 @@ function openDb(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(ANNOTATIONS_STORE)) {
         db.createObjectStore(ANNOTATIONS_STORE, { keyPath: "bookId" });
+      }
+      if (!db.objectStoreNames.contains(EPUB_STORE)) {
+        db.createObjectStore(EPUB_STORE);
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -58,9 +75,12 @@ export async function listBooks(): Promise<BookMeta[]> {
     const tx = db.transaction(BOOKS_STORE, "readonly");
     const req = tx.objectStore(BOOKS_STORE).getAll();
     req.onsuccess = () => {
-      const books = (req.result as BookMeta[]).sort(
-        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-      );
+      const books = (req.result as BookMeta[])
+        .map(normalizeBook)
+        .sort(
+          (a, b) =>
+            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+        );
       resolve(books);
     };
     req.onerror = () => reject(req.error);
@@ -72,7 +92,10 @@ export async function getBook(id: string): Promise<BookMeta | undefined> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(BOOKS_STORE, "readonly");
     const req = tx.objectStore(BOOKS_STORE).get(id);
-    req.onsuccess = () => resolve(req.result as BookMeta | undefined);
+    req.onsuccess = () => {
+      const b = req.result as BookMeta | undefined;
+      resolve(b ? normalizeBook(b) : undefined);
+    };
     req.onerror = () => reject(req.error);
   });
 }
@@ -80,19 +103,18 @@ export async function getBook(id: string): Promise<BookMeta | undefined> {
 export async function saveBook(book: BookMeta): Promise<void> {
   const db = await openDb();
   const tx = db.transaction(BOOKS_STORE, "readwrite");
-  tx.objectStore(BOOKS_STORE).put(book);
+  tx.objectStore(BOOKS_STORE).put(normalizeBook(book));
   await txDone(tx);
 }
 
 export async function deleteBook(id: string): Promise<void> {
   const db = await openDb();
-  const tx = db.transaction(
-    [BOOKS_STORE, FILES_STORE, ANNOTATIONS_STORE],
-    "readwrite",
-  );
+  const stores = [BOOKS_STORE, FILES_STORE, ANNOTATIONS_STORE, EPUB_STORE];
+  const tx = db.transaction(stores, "readwrite");
   tx.objectStore(BOOKS_STORE).delete(id);
   tx.objectStore(FILES_STORE).delete(id);
   tx.objectStore(ANNOTATIONS_STORE).delete(id);
+  tx.objectStore(EPUB_STORE).delete(id);
   await txDone(tx);
 }
 
@@ -113,6 +135,28 @@ export async function getPdfBlob(bookId: string): Promise<Blob | undefined> {
   });
 }
 
+export async function saveEpubChapters(
+  bookId: string,
+  chapters: EpubChapter[],
+): Promise<void> {
+  const db = await openDb();
+  const tx = db.transaction(EPUB_STORE, "readwrite");
+  tx.objectStore(EPUB_STORE).put(chapters, bookId);
+  await txDone(tx);
+}
+
+export async function getEpubChapters(
+  bookId: string,
+): Promise<EpubChapter[] | undefined> {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(EPUB_STORE, "readonly");
+    const req = tx.objectStore(EPUB_STORE).get(bookId);
+    req.onsuccess = () => resolve(req.result as EpubChapter[] | undefined);
+    req.onerror = () => reject(req.error);
+  });
+}
+
 export async function getAnnotations(
   bookId: string,
 ): Promise<BookAnnotations> {
@@ -123,7 +167,9 @@ export async function getAnnotations(
     req.onsuccess = () => {
       resolve(
         normalizeAnnotations(
-          req.result as (Partial<BookAnnotations> & { bookId: string }) | undefined,
+          req.result as
+            | (Partial<BookAnnotations> & { bookId: string })
+            | undefined,
         ),
       );
     };
@@ -131,7 +177,7 @@ export async function getAnnotations(
   });
 }
 
-async function putAnnotations(
+export async function putAnnotations(
   bookId: string,
   data: BookAnnotations,
 ): Promise<void> {
@@ -219,7 +265,6 @@ export async function clearPageInk(
   return data;
 }
 
-/** Remove the last stroke that intersects near a point (eraser). */
 export async function eraseInkNear(
   bookId: string,
   page: number,
@@ -232,11 +277,7 @@ export async function eraseInkNear(
   let hitId: string | null = null;
   for (let i = pageInk.length - 1; i >= 0; i--) {
     const s = pageInk[i];
-    if (
-      s.points.some(
-        (p) => Math.hypot(p.x - x, p.y - y) <= radius,
-      )
-    ) {
+    if (s.points.some((p) => Math.hypot(p.x - x, p.y - y) <= radius)) {
       hitId = s.id;
       break;
     }
@@ -245,6 +286,26 @@ export async function eraseInkNear(
     data.ink = data.ink.filter((x) => x.id !== hitId);
     await putAnnotations(bookId, data);
   }
+  return data;
+}
+
+export async function setFlashcards(
+  bookId: string,
+  cards: Flashcard[],
+): Promise<BookAnnotations> {
+  const data = await getAnnotations(bookId);
+  data.flashcards = cards;
+  await putAnnotations(bookId, data);
+  return data;
+}
+
+export async function appendChat(
+  bookId: string,
+  messages: ChatMessage[],
+): Promise<BookAnnotations> {
+  const data = await getAnnotations(bookId);
+  data.chat.push(...messages);
+  await putAnnotations(bookId, data);
   return data;
 }
 
@@ -257,4 +318,16 @@ export async function updateLastPage(
   book.lastPage = page;
   book.updatedAt = new Date().toISOString();
   await saveBook(book);
+}
+
+export async function updateBookTags(
+  bookId: string,
+  tags: string[],
+): Promise<BookMeta | undefined> {
+  const book = await getBook(bookId);
+  if (!book) return undefined;
+  book.tags = tags;
+  book.updatedAt = new Date().toISOString();
+  await saveBook(book);
+  return book;
 }

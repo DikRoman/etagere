@@ -1,10 +1,18 @@
 import type { Metadata } from "next";
-import { Fraunces, Manrope } from "next/font/google";
+import { Alegreya, Fraunces, Manrope } from "next/font/google";
 import "./globals.css";
+import { ThemeProvider } from "@/components/ThemeProvider";
+import { AuthProvider } from "@/components/AuthProvider";
 
 const display = Fraunces({
   variable: "--font-display",
   subsets: ["latin"],
+  weight: ["500", "600", "700"],
+});
+
+const cyrDisplay = Alegreya({
+  variable: "--font-cyr-display",
+  subsets: ["cyrillic", "latin"],
   weight: ["500", "600", "700"],
 });
 
@@ -15,14 +23,22 @@ const sans = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: "étagère",
-  description: "Local PDF reader with Google Drive sync, annotations, and AI stubs",
+  title: "Étagère · Этажер",
+  description:
+    "Читалка PDF/EPUB с полкой, заметками и синхронизацией — Étagère / Этажер",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="ru" className={`${display.variable} ${sans.variable} h-full`}>
-      <body className="min-h-full antialiased">{children}</body>
+    <html
+      lang="ru"
+      className={`${display.variable} ${cyrDisplay.variable} ${sans.variable} h-full`}
+    >
+      <body className="min-h-full antialiased">
+        <ThemeProvider>
+          <AuthProvider>{children}</AuthProvider>
+        </ThemeProvider>
+      </body>
     </html>
   );
 }
