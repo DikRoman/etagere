@@ -4,17 +4,21 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build && bash scripts/prepare-standalone.sh",
     "start": "next start",
     "lint": "eslint",
+    "deploy:vps": "bash scripts/deploy-vps.sh",
     "pb:up": "docker compose up -d --build",
     "pb:down": "docker compose down",
     "pb:serve": "bash pocketbase/start.sh",
     "pb:superuser": "docker compose exec pocketbase /pb/pocketbase superuser upsert admin@etagere.local changeme123"
   },
   "dependencies": {
+    "epubjs": "^0.3.93",
     "jszip": "^3.10.1",
+    "minisearch": "^7.2.0",
     "next": "16.3.0",
+    "nodemailer": "^9.0.5",
     "pdfjs-dist": "^6.2.108",
     "pocketbase": "^0.27.1",
     "react": "19.2.8",
@@ -24,13 +28,16 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/jsdom": "^30.0.0",
     "@types/jszip": "^3.4.0",
     "@types/node": "^20",
+    "@types/nodemailer": "^8.0.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/uuid": "^10.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
+    "jsdom": "^27.0.1",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

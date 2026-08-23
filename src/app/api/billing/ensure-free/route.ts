@@ -1,20 +1,15 @@
 import { NextResponse } from "next/server";
 import PocketBase from "pocketbase";
+import { authAsAdmin, pbBaseUrl } from "@/lib/pb-admin";
 
-function pbBase() {
-  return (
-    process.env.NEXT_PUBLIC_POCKETBASE_URL?.replace(/\/$/, "") ||
-    "http://127.0.0.1:8090"
-  );
-}
-
+/** On first login/register: 7-day Pro trial. */
 export async function POST(req: Request) {
   const auth = req.headers.get("Authorization") || "";
   if (!auth) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const userPb = new PocketBase(pbBase());
+  const userPb = new PocketBase(pbBaseUrl());
   userPb.authStore.save(auth, null);
   try {
     await userPb.collection("users").authRefresh();
@@ -26,24 +21,36 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "No user" }, { status: 401 });
   }
 
-  // Prefer client create (allowed for free plan)
   try {
     await userPb
       .collection("subscriptions")
       .getFirstListItem(`user = "${user.id}"`);
     return NextResponse.json({ ok: true, existed: true });
   } catch {
+    // createRule blocks client-side pro/trialing — use admin
     try {
-      await userPb.collection("subscriptions").create({
+      const expires = new Date();
+      expires.setDate(expires.getDate() + 7);
+      const adminPb = new PocketBase(pbBaseUrl());
+      await authAsAdmin(adminPb);
+      await adminPb.collection("subscriptions").create({
         user: user.id,
-        plan: "free",
-        status: "active",
+        plan: "pro",
+        status: "trialing",
+        expires_at: expires.toISOString(),
+        provider: "trial",
       });
-      return NextResponse.json({ ok: true, created: true });
+      return NextResponse.json({
+        ok: true,
+        created: true,
+        trial: true,
+        expires_at: expires.toISOString(),
+      });
     } catch (e) {
       return NextResponse.json(
         {
-          error: e instanceof Error ? e.message : "Could not create free plan",
+          error:
+            e instanceof Error ? e.message : "Could not start free trial",
         },
         { status: 500 },
       );

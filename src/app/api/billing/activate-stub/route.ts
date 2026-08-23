@@ -1,33 +1,12 @@
 import { NextResponse } from "next/server";
 import PocketBase from "pocketbase";
-
-function pbBase() {
-  return (
-    process.env.NEXT_PUBLIC_POCKETBASE_URL?.replace(/\/$/, "") ||
-    "http://127.0.0.1:8090"
-  );
-}
-
-async function authAsAdmin(pb: PocketBase) {
-  const email = process.env.POCKETBASE_ADMIN_EMAIL;
-  const pass = process.env.POCKETBASE_ADMIN_PASSWORD;
-  if (!email || !pass) {
-    throw new Error(
-      "Set POCKETBASE_ADMIN_EMAIL and POCKETBASE_ADMIN_PASSWORD in .env.local",
-    );
-  }
-  // PocketBase ≥0.23 uses _superusers
-  try {
-    await pb.collection("_superusers").authWithPassword(email, pass);
-  } catch {
-    await pb.admins.authWithPassword(email, pass);
-  }
-}
+import { authAsAdmin, pbBaseUrl } from "@/lib/pb-admin";
+import { stubBillingAllowed } from "@/lib/yookassa";
 
 async function authUserFromHeader(req: Request) {
   const auth = req.headers.get("Authorization") || "";
   if (!auth) return null;
-  const pb = new PocketBase(pbBase());
+  const pb = new PocketBase(pbBaseUrl());
   pb.authStore.save(auth, null);
   try {
     await pb.collection("users").authRefresh();
@@ -46,23 +25,42 @@ export async function POST(req: Request) {
 
   const body = (await req.json()) as {
     months?: number;
+    trialDays?: number;
     subscriptionId?: string;
   };
-  const months = Math.min(12, Math.max(1, body.months ?? 1));
+
+  const trialDays =
+    typeof body.trialDays === "number" && body.trialDays > 0
+      ? Math.min(30, body.trialDays)
+      : 0;
+
+  if (trialDays === 0 && !stubBillingAllowed()) {
+    return NextResponse.json(
+      { error: "Stub billing is disabled" },
+      { status: 403 },
+    );
+  }
+  const months =
+    trialDays > 0 ? 0 : Math.min(12, Math.max(1, body.months ?? 1));
+
   const expires = new Date();
-  expires.setMonth(expires.getMonth() + months);
+  if (trialDays > 0) {
+    expires.setDate(expires.getDate() + trialDays);
+  } else {
+    expires.setMonth(expires.getMonth() + months);
+  }
 
   const payload = {
     user: user.id,
     plan: "pro" as const,
-    status: "active" as const,
+    status: (trialDays > 0 ? "trialing" : "active") as "trialing" | "active",
     expires_at: expires.toISOString(),
-    provider: "stub",
+    provider: trialDays > 0 ? "trial" : "stub",
     provider_payment_id: `stub_${Date.now()}`,
   };
 
   try {
-    const adminPb = new PocketBase(pbBase());
+    const adminPb = new PocketBase(pbBaseUrl());
     await authAsAdmin(adminPb);
 
     try {

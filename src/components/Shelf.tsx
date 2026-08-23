@@ -1,170 +1,133 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useLibraryStore } from "@/store/library";
 import { useSettingsStore } from "@/store/settings";
 import { t } from "@/lib/i18n";
-import { BookCover } from "./BookCover";
 import { BrandMark } from "./BrandMark";
-import { UploadBookButton } from "./UploadBookButton";
+import { UploadBookButton, BookDropZone } from "./UploadBookButton";
+import { CloudDisks } from "./CloudDisks";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { ThemeSwitcher } from "./ThemeSwitcher";
+import { ShelfRecent, ShelfStats } from "./ShelfStats";
+import { FeatureRibbon } from "./FeatureRibbon";
+import { LibrarySidebar } from "./LibrarySidebar";
+import { LibraryBooksGrid } from "./LibraryBooksGrid";
+import { SelectionBar } from "./SelectionBar";
+import { AccountLink } from "./AccountLink";
 import { useAuthStore } from "@/store/auth";
 import Link from "next/link";
 
 export function Shelf() {
   const locale = useSettingsStore((s) => s.locale);
   const user = useAuthStore((s) => s.user);
-  const hasPro = useAuthStore((s) => s.hasPro);
-  const {
-    books,
-    loading,
-    hydrate,
-    driveConnected,
-    connectDrive,
-    tagFilter,
-    setTagFilter,
-  } = useLibraryStore();
+  const { books, loading, hydrate } = useLibraryStore();
   const [query, setQuery] = useState("");
-  const [driveMsg, setDriveMsg] = useState<string | null>(null);
 
   useEffect(() => {
     void hydrate();
   }, [hydrate]);
 
-  const allTags = useMemo(() => {
-    const s = new Set<string>();
-    books.forEach((b) => b.tags.forEach((t) => s.add(t)));
-    return Array.from(s).sort();
-  }, [books]);
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return books.filter((b) => {
-      if (tagFilter && !b.tags.includes(tagFilter)) return false;
-      if (!q) return true;
-      return (
-        b.title.toLowerCase().includes(q) ||
-        (b.author ?? "").toLowerCase().includes(q) ||
-        b.tags.some((t) => t.includes(q))
-      );
-    });
-  }, [books, query, tagFilter]);
+  const hasBooks = books.length > 0;
 
   return (
-    <div className="shelf-page">
-      <header className="shelf-header">
-        <div className="brand-block">
-          <BrandMark link={false} size="hero" />
+    <BookDropZone enabled={Boolean(user)}>
+      <div className={`shelf-page ${user ? "shelf-page--library" : ""}`}>
+        <header className="shelf-header">
+          <div className="shelf-top">
+            <BrandMark link={false} size="nav" className="shelf-top-brand" />
+            <div className="shelf-auth-bar">
+              <ThemeSwitcher />
+              <LanguageSwitcher />
+              {user ? (
+                <AccountLink />
+              ) : (
+                <>
+                  <Link href="/login" className="btn-ghost">
+                    {t("login", locale)}
+                  </Link>
+                  <Link href="/register" className="btn-primary">
+                    {t("register", locale)}
+                  </Link>
+                </>
+              )}
+            </div>
+          </div>
           <p className="tagline">{t("tagline", locale)}</p>
-        </div>
-        <div className="shelf-actions">
-          <ThemeSwitcher />
-          <LanguageSwitcher />
-          <Link href="/pricing" className="btn-ghost">
-            {t("pricing", locale)}
-          </Link>
-          {user ? (
-            <Link
-              href="/account"
-              className={`btn-ghost ${hasPro() ? "is-on" : ""}`}
-            >
-              {t("account", locale)}
-              {hasPro() ? " · Pro" : ""}
-            </Link>
-          ) : (
-            <Link href="/login" className="btn-ghost">
-              {t("login", locale)}
-            </Link>
+          {!user && (
+            <div className="shelf-actions">
+              <Link href="/pricing" className="btn-ghost">
+                {t("pricing", locale)}
+              </Link>
+            </div>
           )}
-          <button
-            type="button"
-            className={`btn-ghost ${driveConnected ? "is-on" : ""}`}
-            onClick={async () => {
-              const msg = await connectDrive();
-              setDriveMsg(msg);
-            }}
-          >
-            {driveConnected
-              ? t("driveConnected", locale)
-              : t("driveConnect", locale)}
-          </button>
-          <UploadBookButton />
-        </div>
-      </header>
+        </header>
 
-      {(driveMsg || !driveConnected) && (
-        <p className="drive-hint">
-          {driveMsg ?? t("driveLocalMode", locale)}
-        </p>
-      )}
+        {!user && (
+          <>
+            <p className="drive-hint">
+              {locale === "ru"
+                ? "Войди в личный кабинет, чтобы добавлять книги с диска или с компьютера."
+                : "Sign in to add books from your disk or your device."}
+            </p>
+            <FeatureRibbon />
+            <div className="empty-state">
+              <p>
+                {locale === "ru"
+                  ? "Библиотека доступна после входа в личный кабинет."
+                  : "Your library opens after you sign in."}
+              </p>
+              <Link href="/login" className="btn-primary">
+                {t("login", locale)}
+              </Link>
+            </div>
+          </>
+        )}
 
-      <div className="shelf-toolbar">
-        <h1>{t("myLibrary", locale)}</h1>
-        <input
-          className="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={t("searchPlaceholder", locale)}
-        />
-      </div>
-
-      {allTags.length > 0 && (
-        <div className="tag-filter-row">
-          <span>{t("collections", locale)}:</span>
-          <button
-            type="button"
-            className={`tag-chip ${!tagFilter ? "on" : ""}`}
-            onClick={() => setTagFilter(null)}
-          >
-            {t("allTags", locale)}
-          </button>
-          {allTags.map((tag) => (
-            <button
-              key={tag}
-              type="button"
-              className={`tag-chip ${tagFilter === tag ? "on" : ""}`}
-              onClick={() => setTagFilter(tagFilter === tag ? null : tag)}
-            >
-              {tag}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {loading ? (
-        <p className="empty-state">
-          {locale === "ru" ? "Загрузка…" : "Loading…"}
-        </p>
-      ) : filtered.length === 0 ? (
-        <div className="empty-state">
-          <p>{t("emptyShelf", locale)}</p>
-          <UploadBookButton />
-        </div>
-      ) : (
-        <div className="shelf-rows">
-          {chunk(filtered, 5).map((row, rowIndex) => (
-            <section key={rowIndex} className="shelf-row">
-              <div className="shelf-books">
-                {row.map((book, i) => (
-                  <BookCover
-                    key={book.id}
-                    book={book}
-                    index={rowIndex * 5 + i}
-                  />
-                ))}
+        {user && (
+          <div className="library-layout">
+            <LibrarySidebar />
+            <div className="library-main">
+              <div className="library-main-head">
+                <h1>{t("myLibrary", locale)}</h1>
+                <input
+                  className="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={t("searchPlaceholder", locale)}
+                />
               </div>
-              <div className="shelf-plank" aria-hidden />
-            </section>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
-function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
+              <div className="library-main-actions">
+                <UploadBookButton />
+                <Link href="/pricing" className="btn-ghost">
+                  {t("pricing", locale)}
+                </Link>
+              </div>
+              <CloudDisks />
+
+              {!loading && hasBooks && <ShelfRecent books={books} />}
+
+              {user &&
+                !loading &&
+                books.some(
+                  (b) =>
+                    b.missingLocalFile &&
+                    !b.hasCloudFile &&
+                    !b.driveFileId &&
+                    !b.cloudFileId,
+                ) && (
+                  <p className="drive-hint">{t("missingFileBanner", locale)}</p>
+                )}
+
+              <LibraryBooksGrid query={query} />
+              <SelectionBar />
+
+              {!loading && hasBooks && <ShelfStats books={books} />}
+            </div>
+          </div>
+        )}
+      </div>
+    </BookDropZone>
+  );
 }

@@ -3,6 +3,7 @@
 import { useSettingsStore } from "@/store/settings";
 import { useReaderStore } from "@/store/reader";
 import { t } from "@/lib/i18n";
+import { WordLookupSheet } from "./WordLookupSheet";
 
 export function AiPanel() {
   const locale = useSettingsStore((s) => s.locale);
@@ -11,6 +12,17 @@ export function AiPanel() {
   const setAiOpen = useReaderStore((s) => s.setAiOpen);
 
   if (!open || !result) return null;
+
+  if (result.kind === "lookup") {
+    return (
+      <WordLookupSheet
+        data={result.data}
+        loading={result.loading}
+        title={result.title}
+        onClose={() => setAiOpen(false)}
+      />
+    );
+  }
 
   return (
     <div className="ai-panel" role="dialog" aria-label={t("aiPanel", locale)}>

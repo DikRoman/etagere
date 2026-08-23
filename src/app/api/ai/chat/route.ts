@@ -1,6 +1,24 @@
 import { NextResponse } from "next/server";
+import { gigachatConfigured, gigachatText } from "@/lib/gigachat";
+import {
+  consumeQuota,
+  QuotaError,
+  quotaJson,
+  readQuota,
+  userIdFromRequest,
+} from "@/lib/ai-quota";
+
+export const runtime = "nodejs";
 
 export async function POST(req: Request) {
+  const userId = await userIdFromRequest(req);
+  if (!userId) {
+    return NextResponse.json(
+      { error: "Login required", code: "LOGIN_REQUIRED" },
+      { status: 401 },
+    );
+  }
+
   const body = (await req.json()) as {
     question?: string;
     bookTitle?: string;
@@ -10,14 +28,63 @@ export async function POST(req: Request) {
   const q = (body.question ?? "").trim();
   const locale = body.locale ?? "ru";
   const title = body.bookTitle ?? "book";
-  const ctx = (body.context ?? "").slice(0, 500);
+  const ctx = (body.context ?? "").slice(0, 5000);
 
-  await new Promise((r) => setTimeout(r, 400));
+  if (!q) {
+    return NextResponse.json({ result: "" });
+  }
 
-  const result =
-    locale === "ru"
-      ? `Чат (заглушка) по «${title}».\nВопрос: ${q}\n\nОтвет: опираясь на контекст «${ctx || "…"}», кратко: идея связана с этим фрагментом. Подключи модель для настоящего ответа.`
-      : `Chat (stub) about “${title}”.\nQ: ${q}\n\nA: Based on “${ctx || "…"}”, the idea relates to that passage. Wire a real model for a proper answer.`;
+  let quota;
+  try {
+    quota = await readQuota(userId);
+    if (quota.chat.remaining <= 0) {
+      throw new QuotaError(
+        "QUOTA_EXCEEDED",
+        "chat",
+        quota.chat.used,
+        quota.chat.limit,
+        quota.period,
+        "Monthly AI limit reached",
+      );
+    }
+  } catch (e) {
+    if (e instanceof QuotaError) {
+      return NextResponse.json(quotaJson(e), { status: 429 });
+    }
+    throw e;
+  }
 
-  return NextResponse.json({ result, stub: true });
+  const lang = locale === "ru" ? "русском" : "английском";
+
+  if (!gigachatConfigured()) {
+    return NextResponse.json({
+      result:
+        locale === "ru"
+          ? `Чат (заглушка) по «${title}».\n${q}`
+          : `Chat (stub) about “${title}”.\n${q}`,
+      stub: true,
+      quota,
+    });
+  }
+
+  try {
+    const result = await gigachatText({
+      system:
+        `Ты помощник в читалке. Отвечай на ${lang} языке. ` +
+        "Человек читает книгу и ведёт диалог: может прислать несколько фрагментов подряд и задавать уточнения. " +
+        "Опирайся на переданную историю чата и фрагменты. Если фрагмента мало — скажи об этом и ответь осторожно. " +
+        "Кратко, по делу, без воды. Не выдумывай сюжет за пределами текста. " +
+        "Таблицы давай только markdown: строка заголовков, строка |---|---|, затем ряды. Не рисуй таблицы пробелами и «палочками» без разделителя.",
+      user: `Книга: ${title}\n\nДиалог и фрагменты из читалки:\n${ctx || "(пусто)"}\n\nНовое сообщение читателя:\n${q}`,
+      maxTokens: 1200,
+    });
+    quota = await consumeQuota(userId);
+    return NextResponse.json({ result, quota });
+  } catch (e) {
+    console.error("[ai/chat]", e);
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Chat failed" },
+      { status: 502 },
+    );
+  }
 }

@@ -1,0 +1,11 @@
+[Unit]
+Description=Étagère YooKassa daily subscription renew
+After=network-online.target etagere-web.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=etagere
+Group=etagere
+EnvironmentFile=/etc/default/etagere-web
+ExecStart=/opt/etagere/bin/yookassa-renew.sh

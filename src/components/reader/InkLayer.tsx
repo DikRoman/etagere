@@ -2,17 +2,21 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useReaderStore } from "@/store/reader";
-import type { InkPoint } from "@/lib/types";
+import { useSettingsStore } from "@/store/settings";
+import type { InkPoint, InkStroke } from "@/lib/types";
+import {
+  migrateLegacyInk,
+  packDrawnStroke,
+  strokeOverlayPoints,
+} from "@/lib/ink-space";
 
 interface Props {
   page: number;
   width: number;
   height: number;
-  strokes: {
-    color: string;
-    width: number;
-    points: InkPoint[];
-  }[];
+  pageWidth: number;
+  marginWidth: number;
+  strokes: InkStroke[];
 }
 
 function pressureOf(e: PointerEvent | React.PointerEvent): number {
@@ -54,7 +58,14 @@ function drawVariableStroke(
   }
 }
 
-export function InkLayer({ page, width, height, strokes }: Props) {
+export function InkLayer({
+  page,
+  width,
+  height,
+  pageWidth,
+  marginWidth,
+  strokes,
+}: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawing = useRef<{
     pointerId: number;
@@ -66,10 +77,24 @@ export function InkLayer({ page, width, height, strokes }: Props) {
   const stylusOnly = useReaderStore((s) => s.stylusOnly);
   const pressureEnabled = useReaderStore((s) => s.pressureEnabled);
   const addInkStroke = useReaderStore((s) => s.addInkStroke);
-  const eraseInkNear = useReaderStore((s) => s.eraseInkNear);
+  const removeInkStroke = useReaderStore((s) => s.removeInkStroke);
+  const updateInkStroke = useReaderStore((s) => s.updateInkStroke);
+  const storedRatio = useSettingsStore((s) => s.marginRatio);
   const [draft, setDraft] = useState<InkPoint[] | null>(null);
+  const migrated = useRef(new Set<string>());
 
   const interactive = tool === "pen" || tool === "eraser";
+
+  useEffect(() => {
+    if (marginWidth < 8) return;
+    for (const stroke of strokes) {
+      if (stroke.space || migrated.current.has(stroke.id)) continue;
+      const next = migrateLegacyInk(stroke, pageWidth, marginWidth);
+      if (!next) continue;
+      migrated.current.add(stroke.id);
+      void updateInkStroke(stroke.id, next);
+    }
+  }, [strokes, pageWidth, marginWidth, updateInkStroke]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -85,12 +110,39 @@ export function InkLayer({ page, width, height, strokes }: Props) {
     ctx.clearRect(0, 0, width, height);
 
     for (const s of strokes) {
-      drawVariableStroke(ctx, s.points, s.color, s.width, width, height);
+      const points = strokeOverlayPoints(
+        s,
+        pageWidth,
+        marginWidth,
+        storedRatio,
+      );
+      if (!points || points.length < 2) continue;
+      ctx.save();
+      ctx.beginPath();
+      if (s.space === "margin" && marginWidth >= 8) {
+        ctx.rect(pageWidth, 0, marginWidth, height);
+        ctx.clip();
+      } else if (s.space === "page" && marginWidth >= 8) {
+        ctx.rect(0, 0, pageWidth, height);
+        ctx.clip();
+      }
+      drawVariableStroke(ctx, points, s.color, s.width, width, height);
+      ctx.restore();
     }
     if (draft) {
       drawVariableStroke(ctx, draft, penColor, penWidth, width, height);
     }
-  }, [width, height, strokes, draft, penColor, penWidth]);
+  }, [
+    width,
+    height,
+    pageWidth,
+    marginWidth,
+    storedRatio,
+    strokes,
+    draft,
+    penColor,
+    penWidth,
+  ]);
 
   function acceptPointer(e: React.PointerEvent): boolean {
     if (!interactive) return false;
@@ -112,6 +164,23 @@ export function InkLayer({ page, width, height, strokes }: Props) {
     };
   }
 
+  function eraseAt(x: number, y: number, radius: number) {
+    for (let i = strokes.length - 1; i >= 0; i--) {
+      const stroke = strokes[i];
+      const points = strokeOverlayPoints(
+        stroke,
+        pageWidth,
+        marginWidth,
+        storedRatio,
+      );
+      if (!points) continue;
+      if (points.some((p) => Math.hypot(p.x - x, p.y - y) <= radius)) {
+        void removeInkStroke(stroke.id);
+        return;
+      }
+    }
+  }
+
   function onPointerDown(e: React.PointerEvent) {
     if (!acceptPointer(e)) return;
     // Don't steal scroll with a second finger
@@ -123,7 +192,7 @@ export function InkLayer({ page, width, height, strokes }: Props) {
     const point = norm(e, rect);
 
     if (tool === "eraser") {
-      void eraseInkNear(page, point.x, point.y, e.pointerType === "pen" ? 0.04 : 0.03);
+      eraseAt(point.x, point.y, e.pointerType === "pen" ? 0.04 : 0.03);
       drawing.current = { pointerId: e.pointerId, points: [point] };
       return;
     }
@@ -147,7 +216,7 @@ export function InkLayer({ page, width, height, strokes }: Props) {
     if (tool === "eraser") {
       for (const ev of coalesced) {
         const p = norm(ev, rect);
-        void eraseInkNear(page, p.x, p.y, 0.035);
+        eraseAt(p.x, p.y, 0.035);
       }
       return;
     }
@@ -172,13 +241,15 @@ export function InkLayer({ page, width, height, strokes }: Props) {
 
     if (tool !== "pen" || points.length < 2) return;
 
-    // Average pressure → store as stroke width factor already in points
-    void addInkStroke({
-      page,
-      color: penColor,
-      width: penWidth,
-      points,
-    });
+    for (const packed of packDrawnStroke(points, pageWidth, marginWidth)) {
+      void addInkStroke({
+        page,
+        color: penColor,
+        width: penWidth,
+        space: packed.space,
+        points: packed.points,
+      });
+    }
   }
 
   return (

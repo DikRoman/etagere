@@ -1,10 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { PDFDocumentProxy } from "pdfjs-dist";
+import type { PDFDocumentProxy, PageViewport } from "pdfjs-dist";
+import { renderPdfTextLayer } from "@/lib/pdf";
 import { useReaderStore } from "@/store/reader";
-import { HIGHLIGHT_COLORS, type TextRect } from "@/lib/types";
+import { useSettingsStore } from "@/store/settings";
+import { HIGHLIGHT_COLORS, QUOTE_MARKER, NOTE_MARKER } from "@/lib/types";
 import { InkLayer } from "./InkLayer";
+import { MarginTextLayer } from "./MarginTextLayer";
+import { PdfLinkLayer } from "./PdfLinkLayer";
+import { PdfSelectLayer } from "./PdfSelectLayer";
 
 interface Props {
   pdf: PDFDocumentProxy;
@@ -24,14 +29,16 @@ export function PdfPage({
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
+  const [textLayerEl, setTextLayerEl] = useState<HTMLDivElement | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState(estimate);
   const [visible, setVisible] = useState(false);
   const [rendered, setRendered] = useState(false);
+  const [viewport, setViewport] = useState<PageViewport | null>(null);
 
   const annotations = useReaderStore((s) => s.annotations);
+  const paper = useSettingsStore((s) => s.notePaper);
   const tool = useReaderStore((s) => s.tool);
-  const setSelection = useReaderStore((s) => s.setSelection);
   const isBookmarked = useReaderStore((s) =>
     s.annotations.bookmarks.some((b) => b.page === pageNumber),
   );
@@ -56,12 +63,15 @@ export function PdfPage({
   useEffect(() => {
     if (!visible) return;
     let cancelled = false;
+    let cancelLayer: (() => void) | undefined;
+    setRendered(false);
     (async () => {
       const page = await pdf.getPage(pageNumber);
       if (cancelled) return;
       const viewport = page.getViewport({ scale });
-      const margin = Math.max(120, viewport.width * marginRatio);
+      const margin = viewport.width * marginRatio;
       setSize({ w: viewport.width, h: viewport.height, margin });
+      setViewport(viewport);
 
       const canvas = canvasRef.current;
       const textLayer = textLayerRef.current;
@@ -88,85 +98,29 @@ export function PdfPage({
       }).promise;
       if (cancelled) return;
 
-      textLayer.innerHTML = "";
-      textLayer.style.width = `${viewport.width}px`;
-      textLayer.style.height = `${viewport.height}px`;
-
-      const textContent = await page.getTextContent();
-      for (const item of textContent.items) {
-        if (!("str" in item) || !item.str) continue;
-        const tx = item.transform;
-        const fontHeight = Math.hypot(tx[2], tx[3]) * scale;
-        const left = tx[4] * scale;
-        const top = viewport.height - tx[5] * scale - fontHeight * 0.85;
-        const span = document.createElement("span");
-        span.textContent =
-          item.str + ("hasEOL" in item && item.hasEOL ? "\n" : " ");
-        span.style.left = `${left}px`;
-        span.style.top = `${top}px`;
-        span.style.fontSize = `${Math.max(fontHeight, 1)}px`;
-        span.style.fontFamily = "sans-serif";
-        span.style.cursor = "text";
-        span.addEventListener("click", (ev) => {
-          if (useReaderStore.getState().tool !== "select") return;
-          const sel = window.getSelection()?.toString().trim();
-          if (sel && sel.length > 1) return; // drag selection handled separately
-          const raw = (ev.target as HTMLElement).textContent ?? "";
-          const word = raw.replace(/[^\p{L}\p{N}'’-]+/gu, " ").trim().split(/\s+/)[0];
-          if (!word || word.length < 2) return;
-          ev.stopPropagation();
-          const rect = (ev.target as HTMLElement).getBoundingClientRect();
-          useReaderStore.getState().setSelection({
-            text: word,
-            page: pageNumber,
-            rects: [],
-            screen: { x: rect.left + rect.width / 2, y: rect.top },
-          });
-        });
-        textLayer.appendChild(span);
+      const job = renderPdfTextLayer(page, textLayer, viewport);
+      cancelLayer = job.cancel;
+      await job.done;
+      if (cancelled) {
+        job.cancel();
+        return;
       }
       setRendered(true);
+      setTextLayerEl(textLayer);
     })();
     return () => {
       cancelled = true;
+      cancelLayer?.();
     };
   }, [pdf, pageNumber, scale, marginRatio, visible]);
-
-  useEffect(() => {
-    if (tool !== "select") return;
-    const onUp = () => {
-      const sel = window.getSelection();
-      const text = sel?.toString().trim() ?? "";
-      if (!text || !sel || sel.rangeCount === 0 || !textLayerRef.current) return;
-      const range = sel.getRangeAt(0);
-      if (!textLayerRef.current.contains(range.commonAncestorContainer)) return;
-
-      const layerRect = textLayerRef.current.getBoundingClientRect();
-      const rects: TextRect[] = [];
-      for (const r of Array.from(range.getClientRects())) {
-        rects.push({
-          x: (r.left - layerRect.left) / (layerRect.width || 1),
-          y: (r.top - layerRect.top) / (layerRect.height || 1),
-          width: r.width / (layerRect.width || 1),
-          height: r.height / (layerRect.height || 1),
-        });
-      }
-      const last = range.getBoundingClientRect();
-      setSelection({
-        text,
-        page: pageNumber,
-        rects,
-        screen: { x: last.left + last.width / 2, y: last.top },
-      });
-    };
-    document.addEventListener("mouseup", onUp);
-    return () => document.removeEventListener("mouseup", onUp);
-  }, [pageNumber, setSelection, tool]);
 
   const pageHighlights = annotations.highlights.filter(
     (h) => h.page === pageNumber,
   );
+  const pageQuotes = annotations.quotes.filter((q) => q.page === pageNumber);
+  const pageNotes = annotations.notes.filter((n) => n.page === pageNumber);
   const pageInk = annotations.ink.filter((s) => s.page === pageNumber);
+  const pageTexts = (annotations.texts ?? []).filter((s) => s.page === pageNumber);
   const totalW = size.w + size.margin;
 
   return (
@@ -189,7 +143,7 @@ export function PdfPage({
                   h.rects.map((r, i) => (
                     <div
                       key={`${h.id}-${i}`}
-                      className="hl-box"
+                      className="hl-box hl-box--mark"
                       style={{
                         left: `${r.x * 100}%`,
                         top: `${r.y * 100}%`,
@@ -200,11 +154,58 @@ export function PdfPage({
                     />
                   )),
                 )}
+                {pageQuotes.flatMap((q) =>
+                  (q.rects ?? []).map((r, i) => (
+                    <div
+                      key={`${q.id}-${i}`}
+                      className="hl-box hl-box--quote"
+                      style={{
+                        left: `${r.x * 100}%`,
+                        top: `${r.y * 100}%`,
+                        width: `${r.width * 100}%`,
+                        height: `${r.height * 100}%`,
+                        background: QUOTE_MARKER.fill,
+                        boxShadow: `inset 3px 0 0 ${QUOTE_MARKER.border}`,
+                      }}
+                    />
+                  )),
+                )}
+                {pageNotes.flatMap((n) =>
+                  n.rects.map((r, i) => (
+                    <div
+                      key={`${n.id}-${i}`}
+                      className="hl-box hl-box--note"
+                      style={{
+                        left: `${r.x * 100}%`,
+                        top: `${r.y * 100}%`,
+                        width: `${r.width * 100}%`,
+                        height: `${r.height * 100}%`,
+                        background: NOTE_MARKER.fill,
+                        outline: `1px dashed ${NOTE_MARKER.border}`,
+                      }}
+                    />
+                  )),
+                )}
               </div>
               <div
                 ref={textLayerRef}
-                className={`text-layer ${tool !== "select" ? "text-layer-off" : ""}`}
+                className={`textLayer text-layer ${tool !== "select" ? "text-layer-off" : "text-layer-custom"}`}
               />
+              {rendered && viewport && tool === "select" && (
+                <PdfLinkLayer
+                  pdf={pdf}
+                  pageNumber={pageNumber}
+                  viewport={viewport}
+                />
+              )}
+              {rendered && visible && (
+                <PdfSelectLayer
+                  enabled={tool === "select"}
+                  textLayer={textLayerEl}
+                  pageNumber={pageNumber}
+                  revision={`${pageNumber}:${scale}:${marginRatio}:${rendered}`}
+                />
+              )}
               {!rendered && <div className="page-placeholder faint" />}
             </>
           ) : (
@@ -214,23 +215,36 @@ export function PdfPage({
           )}
         </div>
 
-        <div
-          className="page-margin"
-          style={{ width: size.margin, height: size.h }}
-        >
-          <div className="margin-lines" aria-hidden />
-        </div>
+        {size.margin >= 8 && (
+          <div
+            className={`page-margin note-paper paper-${paper}${marginRatio >= 0.95 ? " is-sheet" : ""}`}
+            style={{ width: size.margin, height: size.h }}
+          >
+            <div className="margin-lines" aria-hidden />
+          </div>
+        )}
 
         {visible && (
           <div
-            className={`ink-overlay ${tool !== "select" ? "ink-drawing" : ""}`}
+            className={`ink-overlay ${tool === "pen" || tool === "eraser" ? "ink-drawing" : ""}`}
           >
             <InkLayer
               page={pageNumber}
               width={totalW}
               height={size.h}
+              pageWidth={size.w}
+              marginWidth={size.margin}
               strokes={pageInk}
             />
+            {size.margin >= 8 && (
+              <MarginTextLayer
+                page={pageNumber}
+                width={size.margin}
+                height={size.h}
+                pageWidth={size.w}
+                items={pageTexts}
+              />
+            )}
           </div>
         )}
 

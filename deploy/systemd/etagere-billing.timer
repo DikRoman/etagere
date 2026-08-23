@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Étagère YooKassa subscription renew
+
+[Timer]
+OnCalendar=*-*-* 06:15:00
+Persistent=true
+RandomizedDelaySec=8min
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

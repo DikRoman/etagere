@@ -13,6 +13,8 @@ export function getPb(): PocketBase {
   }
   if (!client) {
     client = new PocketBase(url);
+    // Parallel list/update during library sync must not cancel each other.
+    client.autoCancellation(false);
   }
   return client;
 }
@@ -32,6 +34,8 @@ export interface SubscriptionRecord {
   expires_at?: string;
   provider?: string;
   provider_payment_id?: string;
+  provider_method_id?: string;
+  cancel_at_period_end?: boolean;
 }
 
 export function isPro(sub: SubscriptionRecord | null | undefined): boolean {

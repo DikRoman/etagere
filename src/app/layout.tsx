@@ -3,6 +3,8 @@ import { Alegreya, Fraunces, Manrope } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { AuthProvider } from "@/components/AuthProvider";
+import { SiteFooter } from "@/components/SiteFooter";
+import { TelegramAuthCatcher } from "@/components/TelegramAuthCatcher";
 
 const display = Fraunces({
   variable: "--font-display",
@@ -13,7 +15,8 @@ const display = Fraunces({
 const cyrDisplay = Alegreya({
   variable: "--font-cyr-display",
   subsets: ["cyrillic", "latin"],
-  weight: ["500", "600", "700"],
+  // 400 is the reading weight for EPUB body text.
+  weight: ["400", "500", "600", "700"],
 });
 
 const sans = Manrope({
@@ -36,7 +39,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full antialiased">
         <ThemeProvider>
-          <AuthProvider>{children}</AuthProvider>
+          <AuthProvider>
+            <TelegramAuthCatcher />
+            <div className="app-shell">
+              <div className="app-shell-main">{children}</div>
+              <SiteFooter />
+            </div>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>
