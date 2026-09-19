@@ -37,6 +37,11 @@ export const metadata: Metadata = {
   formatDetection: {
     telephone: false,
   },
+  // Domain ownership for Google Search Console, which OAuth brand
+  // verification requires for the authorized domain etagere.ru.
+  verification: {
+    google: "fXz76IECLiylrDLT4LUAjODvi7iY-eB939Rh3qZeksk",
+  },
 };
 
 export const viewport: Viewport = {
