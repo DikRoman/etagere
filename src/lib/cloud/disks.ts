@@ -2,12 +2,13 @@ import type { BookMeta } from "@/lib/types";
 import {
   downloadDriveFile,
   isDriveConnected,
+  listDriveBooks,
   uploadDriveBook,
 } from "@/lib/storage/drive";
 import {
   type CloudProvider,
   connectedProviders,
-  getAccessToken,
+  ensureAccessToken,
 } from "./session";
 
 export function bookFileName(book: BookMeta): string {
@@ -67,7 +68,7 @@ async function yandexDownload(token: string, pathName: string): Promise<Blob> {
 }
 
 export async function listYandexBooks(): Promise<CloudPick[]> {
-  const token = getAccessToken("yandex");
+  const token = await ensureAccessToken("yandex");
   if (!token) throw new Error("Яндекс.Диск не подключён");
   const res = await fetch(
     `https://cloud-api.yandex.net/v1/disk/resources?path=${encodeURIComponent("app:/")}&limit=200&fields=_embedded.items.name,_embedded.items.type,_embedded.items.mime_type`,
@@ -131,7 +132,7 @@ async function dropboxDownload(token: string, pathOrId: string): Promise<Blob> {
 }
 
 export async function listDropboxBooks(): Promise<CloudPick[]> {
-  const token = getAccessToken("dropbox");
+  const token = await ensureAccessToken("dropbox");
   if (!token) throw new Error("Dropbox не подключён");
   const res = await fetch("https://api.dropboxapi.com/2/files/list_folder", {
     method: "POST",
@@ -188,7 +189,7 @@ async function onedriveDownload(token: string, id: string): Promise<Blob> {
 }
 
 export async function listOnedriveBooks(): Promise<CloudPick[]> {
-  const token = getAccessToken("onedrive");
+  const token = await ensureAccessToken("onedrive");
   if (!token) throw new Error("OneDrive не подключён");
   const res = await fetch(
     "https://graph.microsoft.com/v1.0/me/drive/special/approot/children?$select=id,name,file",
@@ -212,7 +213,7 @@ export async function listCloudBooks(
   if (provider === "yandex") return listYandexBooks();
   if (provider === "dropbox") return listDropboxBooks();
   if (provider === "onedrive") return listOnedriveBooks();
-  return [];
+  return listDriveBooks();
 }
 
 export async function downloadFromCloudDisks(
@@ -229,12 +230,14 @@ export async function downloadFromCloudDisks(
   for (const tryOne of tries) {
     try {
       if (tryOne.provider === "gdrive") {
-        const { blob } = await downloadDriveFile(tryOne.fileId);
+        const { blob } = await downloadDriveFile(tryOne.fileId, {
+          interactive: false,
+        });
         if (blob.size > 0)
           return { blob, provider: "gdrive", fileId: tryOne.fileId };
         continue;
       }
-      const token = getAccessToken(tryOne.provider);
+      const token = await ensureAccessToken(tryOne.provider);
       if (!token) continue;
       let blob: Blob | null = null;
       if (tryOne.provider === "yandex")
@@ -284,7 +287,7 @@ export async function backupToCloudDisks(
         hasCloudFile: true,
       };
     }
-    const token = getAccessToken(provider);
+    const token = await ensureAccessToken(provider);
     if (!token) return null;
     let id: string;
     if (provider === "yandex") id = await yandexUpload(token, blob, name);
@@ -305,7 +308,7 @@ export async function downloadCloudPick(
     const { blob, name, mimeType } = await downloadDriveFile(pick.id);
     return new File([blob], name, { type: mimeType });
   }
-  const token = getAccessToken(provider);
+  const token = await ensureAccessToken(provider);
   if (!token) throw new Error("Диск не подключён");
   let blob: Blob;
   if (provider === "yandex") blob = await yandexDownload(token, pick.id);

@@ -18,6 +18,9 @@ export function SiteFooter() {
   const ru = locale === "ru";
 
   if (pathname?.startsWith("/reader")) return null;
+  if (user && (pathname === "/" || pathname === "" || pathname === "/vocab")) {
+    return null;
+  }
 
   const onSignup = async (e: FormEvent) => {
     e.preventDefault();
@@ -72,7 +75,10 @@ export function SiteFooter() {
                 <span>{ru ? "PDF и EPUB" : "PDF & EPUB"}</span>
               </li>
               <li>
-                <span>{ru ? "Конфиденциальность" : "Privacy"}</span>
+                <Link href="/privacy">{t("privacy", locale)}</Link>
+              </li>
+              <li>
+                <Link href="/terms">{t("terms", locale)}</Link>
               </li>
               <li>
                 <a href={`mailto:${SUPPORT_EMAIL}`}>
@@ -110,6 +116,11 @@ export function SiteFooter() {
                   {user ? t("account", locale) : t("login", locale)}
                 </Link>
               </li>
+              {user && (
+                <li>
+                  <Link href="/vocab">{t("wordLookup", locale)}</Link>
+                </li>
+              )}
               {!user && (
                 <li>
                   <Link href="/register">{t("register", locale)}</Link>

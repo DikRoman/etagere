@@ -7,14 +7,30 @@ import type {
   ReadingStatus,
 } from "@/lib/types";
 import * as local from "@/lib/storage/local";
+import {
+  recoverBooksFromConnectedDisks,
+  restoreMissingBookFiles,
+} from "@/lib/sync/book-file";
 
 export type SyncStatus = "idle" | "syncing" | "ok" | "error" | "offline";
 
-type SyncListener = (status: SyncStatus, message?: string) => void;
+export type SyncProgress = {
+  phase: "catalog" | "files" | "recover";
+  done: number;
+  total: number;
+  title?: string;
+} | null;
+
+type SyncListener = (
+  status: SyncStatus,
+  message?: string,
+  progress?: SyncProgress,
+) => void;
 
 const listeners = new Set<SyncListener>();
 let status: SyncStatus = "idle";
 let lastError: string | undefined;
+let progress: SyncProgress = null;
 let syncInFlight: Promise<void> | null = null;
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
 const pendingBookIds = new Set<string | "*">();
@@ -27,16 +43,31 @@ export function getSyncError(): string | undefined {
   return lastError;
 }
 
+export function getSyncProgress(): SyncProgress {
+  return progress;
+}
+
 export function subscribeSync(listener: SyncListener): () => void {
   listeners.add(listener);
-  listener(status, lastError);
+  listener(status, lastError, progress);
   return () => listeners.delete(listener);
+}
+
+function emit() {
+  for (const l of listeners) l(status, lastError, progress);
 }
 
 function setStatus(next: SyncStatus, message?: string) {
   status = next;
   lastError = message;
-  for (const l of listeners) l(status, lastError);
+  if (next !== "syncing") progress = null;
+  emit();
+}
+
+function setProgress(next: NonNullable<SyncProgress>) {
+  status = "syncing";
+  progress = next;
+  emit();
 }
 
 function authedUserId(): string | null {
@@ -81,6 +112,12 @@ function newer(a?: string, b?: string): boolean {
   return ta >= tb;
 }
 
+function mergeIds(remote?: string[] | null, localIds?: string[]): string[] {
+  const localList = localIds ?? [];
+  if (!Array.isArray(remote) || remote.length === 0) return localList;
+  return [...new Set([...remote, ...localList])];
+}
+
 function cloudBookToLocal(
   row: CloudBook,
   existing?: BookMeta,
@@ -99,10 +136,8 @@ function cloudBookToLocal(
     addedAt: row.added_at || existing?.addedAt || now,
     updatedAt: row.meta_updated_at || existing?.updatedAt || now,
     sizeBytes: row.size_bytes || existing?.sizeBytes || 0,
-    tags: Array.isArray(row.tags) ? row.tags : existing?.tags || [],
-    collectionIds: Array.isArray(row.collection_ids)
-      ? row.collection_ids
-      : existing?.collectionIds || [],
+    tags: mergeIds(row.tags, existing?.tags),
+    collectionIds: mergeIds(row.collection_ids, existing?.collectionIds),
     readingStatus:
       (row.reading_status as ReadingStatus) ||
       existing?.readingStatus ||
@@ -121,6 +156,7 @@ function cloudBookToLocal(
         existing?.cloudFileId,
     ),
     missingLocalFile: existing ? Boolean(existing.missingLocalFile) : true,
+    openedAt: existing?.openedAt,
     syncedAt: now,
   };
 }
@@ -194,7 +230,7 @@ export async function pushBook(bookId: string): Promise<void> {
   const userId = authedUserId();
   if (!userId) return;
   const book = await local.getBook(bookId);
-  if (!book || book.missingLocalFile) return;
+  if (!book) return;
 
   const pb = getPb();
   const existing = await findCloudBook(userId, book);
@@ -356,6 +392,7 @@ export async function pullAndMerge(): Promise<void> {
 
   syncInFlight = (async () => {
     setStatus("syncing");
+    setProgress({ phase: "catalog", done: 0, total: 0 });
     try {
       const pb = getPb();
       const [cloudBooks, cloudCols, localBooks, localCols] = await Promise.all([
@@ -486,12 +523,22 @@ export async function pullAndMerge(): Promise<void> {
         }
       }
 
-      // Push local books that are newer or missing in cloud
       await pushCollections();
       const refreshed = await local.listBooks();
       for (const book of refreshed) {
-        if (book.missingLocalFile) continue;
         await pushBook(book.id);
+      }
+      setProgress({ phase: "files", done: 0, total: 0 });
+      await local.evictStaleBookFiles();
+      await restoreMissingBookFiles((p) => {
+        setProgress({ phase: "files", ...p });
+      });
+      const afterRestore = await local.listBooks();
+      if (afterRestore.length === 0 && cloudBooks.length === 0) {
+        setProgress({ phase: "recover", done: 0, total: 0 });
+        await recoverBooksFromConnectedDisks((p) => {
+          setProgress({ phase: "recover", ...p });
+        });
       }
 
       setStatus("ok");
@@ -553,7 +600,7 @@ async function flushPendingPush(): Promise<void> {
       await pushCollections();
       const books = await local.listBooks();
       for (const b of books) {
-        if (!b.missingLocalFile) await pushBook(b.id);
+        await pushBook(b.id);
       }
     } else {
       await pushCollections();

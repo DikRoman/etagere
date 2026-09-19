@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useSettingsStore } from "@/store/settings";
 import { useReaderStore } from "@/store/reader";
@@ -19,6 +21,7 @@ import { lookupSelection } from "@/lib/ai";
 import { isLookupSelection } from "@/lib/word-lookup";
 import { printedLabel } from "@/lib/toc";
 import { BookSearchPanel } from "./BookSearchPanel";
+import { usePopover } from "./panel-kit";
 
 const TEXT_FONTS: { id: EpubFontChoice; key: MessageKey }[] = [
   { id: "literary", key: "fontLiterary" },
@@ -87,11 +90,11 @@ function ReaderPager({
           )}
         </span>
       ) : (
-        <label className="page-input">
+        <label className="page-input reader-page-slider">
           <input
-            type="number"
+            type="range"
             min={1}
-            max={pageCount}
+            max={Math.max(1, pageCount)}
             value={page}
             onChange={(e) => {
               const n = Number(e.target.value);
@@ -99,7 +102,7 @@ function ReaderPager({
             }}
           />
           <span>
-            {t("pageOf", locale)} {pageCount}
+            {page} {t("pageOf", locale)} {pageCount}
           </span>
           {label && <span className="page-printed">· {label}</span>}
         </label>
@@ -153,6 +156,26 @@ export function ReaderToolbar({ title, pageCount, bookId, format }: Props) {
   const setAiOpen = useReaderStore((s) => s.setAiOpen);
   const setAiResult = useReaderStore((s) => s.setAiResult);
   const selection = useReaderStore((s) => s.selection);
+  const bookmarked = useReaderStore((s) =>
+    s.annotations.bookmarks.some((b) => b.page === s.page),
+  );
+  const toggleBookmark = useReaderStore((s) => s.toggleBookmark);
+
+  const {
+    open: appearanceOpen,
+    setOpen: setAppearanceOpen,
+    spot: appearanceSpot,
+    buttonRef: appearanceBtn,
+    panelRef: appearancePanelRef,
+  } = usePopover();
+  const {
+    open: searchOpen,
+    setOpen: setSearchOpen,
+    spot: searchSpot,
+    buttonRef: searchBtn,
+    panelRef: searchPanelRef,
+  } = usePopover();
+  const [markupOpen, setMarkupOpen] = useState(false);
 
   async function runTranslateSelection() {
     if (!selection?.text) return;
@@ -201,234 +224,298 @@ export function ReaderToolbar({ title, pageCount, bookId, format }: Props) {
   function panelBtn(
     tab: "toc" | "bookmarks" | "notes" | "chat",
     label: string,
+    icon: string,
   ) {
     const on = sidebarOpen && sidebarTab === tab;
     return (
       <button
         type="button"
-        className={`btn-ghost compact ${on ? "is-on" : ""}`}
+        className={`reader-icon-btn ${on ? "is-on" : ""}`}
         onClick={() => {
           if (on) setSidebarOpen(false);
           else setSidebarTab(tab);
         }}
+        title={label}
+        aria-label={label}
       >
-        {label}
+        {icon}
       </button>
     );
   }
 
-  return (
-    <header className="reader-bar">
-      <div className="reader-bar-nav">
-        <div className="reader-bar-start">
-          <Link href="/" className="back-link">
-            ← {t("backToShelf", locale)}
-          </Link>
-          <div className="reader-title" title={title}>
-            {title}
-          </div>
-        </div>
-
-        <ReaderPager format={format} pageCount={pageCount} />
-
-        <div className="reader-bar-search">
-          <BookSearchPanel key={bookId} bookId={bookId} format={format} />
-        </div>
+  const appearancePanel = (
+    <div
+      className="type-panel reader-appearance-panel"
+      role="dialog"
+      aria-label={t("appearance", locale)}
+      ref={appearancePanelRef}
+      style={{ top: appearanceSpot.top, left: appearanceSpot.left }}
+    >
+      <div className="reader-cluster" role="group" aria-label={t("spread", locale)}>
+        <button
+          type="button"
+          className="icon-btn"
+          onClick={() => setScale(scale - 0.1)}
+          aria-label="−"
+        >
+          −
+        </button>
+        <button
+          type="button"
+          className="icon-btn"
+          onClick={() => setScale(scale + 0.1)}
+          aria-label="+"
+        >
+          +
+        </button>
+        <button
+          type="button"
+          className={`btn-ghost compact ${spread ? "is-on" : ""}`}
+          onClick={() => setSpread(!spread)}
+        >
+          {t("spread", locale)}
+        </button>
       </div>
+      <div className="lang-switch theme-switch">
+        {(["day", "paper", "night"] as const).map((th) => (
+          <button
+            key={th}
+            type="button"
+            className={theme === th ? "active" : ""}
+            onClick={() => setTheme(th)}
+          >
+            {th === "day"
+              ? t("themeDay", locale)
+              : th === "paper"
+                ? t("themePaper", locale)
+                : t("themeNight", locale)}
+          </button>
+        ))}
+      </div>
+      {format === "pdf" && (
+        <button
+          type="button"
+          className={`btn-ghost compact ${filmstripOpen ? "is-on" : ""}`}
+          aria-pressed={filmstripOpen}
+          onClick={() => setFilmstripOpen(!filmstripOpen)}
+        >
+          {t("pagesPanel", locale)}
+        </button>
+      )}
+    </div>
+  );
 
-      <div className="reader-bar-tools">
-        <div className="reader-cluster" role="group" aria-label={t("spread", locale)}>
-          <button
-            type="button"
-            className="icon-btn"
-            onClick={() => setScale(scale - 0.1)}
-            aria-label="−"
-          >
-            −
-          </button>
-          <button
-            type="button"
-            className="icon-btn"
-            onClick={() => setScale(scale + 0.1)}
-            aria-label="+"
-          >
-            +
-          </button>
-          <button
-            type="button"
-            className={`btn-ghost compact ${spread ? "is-on" : ""}`}
-            onClick={() => setSpread(!spread)}
-          >
-            {t("spread", locale)}
-          </button>
-          {format === "epub" && <EpubTypePanel />}
-          {format === "pdf" && <MarginPanel />}
-          <div className="lang-switch theme-switch">
-            {(["day", "paper", "night"] as const).map((th) => (
+  const searchPanel = (
+    <div
+      className="type-panel reader-search-panel"
+      role="dialog"
+      aria-label={t("search", locale)}
+      ref={searchPanelRef}
+      style={{ top: searchSpot.top, left: searchSpot.left }}
+    >
+      <BookSearchPanel key={bookId} bookId={bookId} format={format} />
+    </div>
+  );
+
+  const markup = (
+    <div className="reader-markup-tray reader-bar-tools">
+      {toolBtn("select", t("selectTool", locale))}
+      {toolBtn("pen", t("pencil", locale))}
+      {format === "pdf" && toolBtn("type", t("typeTool", locale))}
+      {toolBtn("eraser", t("eraser", locale))}
+
+      {tool === "select" && (
+        <div className="color-row">
+          {(Object.keys(HIGHLIGHT_COLORS) as HighlightColor[]).map((c) => (
+            <button
+              key={c}
+              type="button"
+              className={`swatch ${activeColor === c ? "on" : ""}`}
+              style={{
+                background: HIGHLIGHT_COLORS[c].fill
+                  .replace("0.4", "0.9")
+                  .replace("0.45", "0.9"),
+              }}
+              onClick={() => setActiveColor(c)}
+            />
+          ))}
+        </div>
+      )}
+
+      {tool === "pen" && (
+        <>
+          <div className="color-row">
+            {PEN_COLORS.map((c) => (
               <button
-                key={th}
+                key={c}
                 type="button"
-                className={theme === th ? "active" : ""}
-                onClick={() => setTheme(th)}
+                className={`swatch ${penColor === c ? "on" : ""}`}
+                style={{ background: c }}
+                onClick={() => setPenColor(c)}
+              />
+            ))}
+          </div>
+          <label className="pen-size">
+            <input
+              type="range"
+              min={0.8}
+              max={6}
+              step={0.1}
+              value={penWidth}
+              onChange={(e) => setPenWidth(Number(e.target.value))}
+            />
+          </label>
+          <label className="check-pill">
+            <input
+              type="checkbox"
+              checked={pressureEnabled}
+              onChange={(e) => setPressureEnabled(e.target.checked)}
+            />
+            {t("pressure", locale)}
+          </label>
+          <label className="check-pill">
+            <input
+              type="checkbox"
+              checked={stylusOnly}
+              onChange={(e) => setStylusOnly(e.target.checked)}
+            />
+            {t("stylusOnly", locale)}
+          </label>
+        </>
+      )}
+
+      {tool === "type" && format === "pdf" && (
+        <>
+          <div className="margin-font-row" role="group" aria-label={t("fontLabel", locale)}>
+            {TEXT_FONTS.map((font) => (
+              <button
+                key={font.id}
+                type="button"
+                className={`font-chip font-${font.id} ${
+                  textFont === font.id ? "is-on" : ""
+                }`}
+                style={{ fontFamily: EPUB_FONT_STACKS[font.id] }}
+                onClick={() => setTextFont(font.id)}
+                title={t(font.key, locale)}
               >
-                {th === "day"
-                  ? t("themeDay", locale)
-                  : th === "paper"
-                    ? t("themePaper", locale)
-                    : t("themeNight", locale)}
+                {t(font.key, locale)}
               </button>
             ))}
           </div>
-        </div>
+          <div className="color-row">
+            {PEN_COLORS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                className={`swatch ${penColor === c ? "on" : ""}`}
+                style={{ background: c }}
+                onClick={() => setPenColor(c)}
+              />
+            ))}
+          </div>
+          <label className="pen-size">
+            {t("textSize", locale)}
+            <input
+              type="range"
+              min={0.014}
+              max={0.045}
+              step={0.001}
+              value={textSize}
+              onChange={(e) => setTextSize(Number(e.target.value))}
+            />
+          </label>
+          <span className="margin-text-hint">{t("marginTextHint", locale)}</span>
+        </>
+      )}
 
-        <div className="reader-cluster" role="group" aria-label={t("selectTool", locale)}>
-          {toolBtn("select", t("selectTool", locale))}
-          {toolBtn("pen", t("pencil", locale))}
-          {format === "pdf" && toolBtn("type", t("typeTool", locale))}
-          {toolBtn("eraser", t("eraser", locale))}
+      {tool !== "select" && (
+        <button
+          type="button"
+          className="btn-ghost compact"
+          onClick={() => void clearPageInk(page)}
+        >
+          {t("clearInk", locale)}
+        </button>
+      )}
 
-          {tool === "select" && (
-            <div className="color-row">
-              {(Object.keys(HIGHLIGHT_COLORS) as HighlightColor[]).map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  className={`swatch ${activeColor === c ? "on" : ""}`}
-                  style={{
-                    background: HIGHLIGHT_COLORS[c].fill
-                      .replace("0.4", "0.9")
-                      .replace("0.45", "0.9"),
-                  }}
-                  onClick={() => setActiveColor(c)}
-                />
-              ))}
+      <button
+        type="button"
+        className="btn-ghost compact"
+        disabled={!selection?.text}
+        onClick={() => void runTranslateSelection()}
+      >
+        {t("translate", locale)}
+      </button>
+    </div>
+  );
+
+  return (
+    <>
+      <header className="reader-bar reader-chrome-top">
+        <div className="reader-bar-nav">
+          <div className="reader-bar-start">
+            <Link href="/" className="back-link">
+              {t("backToShelf", locale)}
+            </Link>
+            <div className="reader-title" title={title}>
+              {title}
             </div>
-          )}
-
-          {tool === "pen" && (
-            <>
-              <div className="color-row">
-                {PEN_COLORS.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    className={`swatch ${penColor === c ? "on" : ""}`}
-                    style={{ background: c }}
-                    onClick={() => setPenColor(c)}
-                  />
-                ))}
-              </div>
-              <label className="pen-size">
-                <input
-                  type="range"
-                  min={0.8}
-                  max={6}
-                  step={0.1}
-                  value={penWidth}
-                  onChange={(e) => setPenWidth(Number(e.target.value))}
-                />
-              </label>
-              <label className="check-pill">
-                <input
-                  type="checkbox"
-                  checked={pressureEnabled}
-                  onChange={(e) => setPressureEnabled(e.target.checked)}
-                />
-                {t("pressure", locale)}
-              </label>
-              <label className="check-pill">
-                <input
-                  type="checkbox"
-                  checked={stylusOnly}
-                  onChange={(e) => setStylusOnly(e.target.checked)}
-                />
-                {t("stylusOnly", locale)}
-              </label>
-            </>
-          )}
-
-          {tool === "type" && format === "pdf" && (
-            <>
-              <div className="margin-font-row" role="group" aria-label={t("fontLabel", locale)}>
-                {TEXT_FONTS.map((font) => (
-                  <button
-                    key={font.id}
-                    type="button"
-                    className={`font-chip font-${font.id} ${
-                      textFont === font.id ? "is-on" : ""
-                    }`}
-                    style={{ fontFamily: EPUB_FONT_STACKS[font.id] }}
-                    onClick={() => setTextFont(font.id)}
-                    title={t(font.key, locale)}
-                  >
-                    {t(font.key, locale)}
-                  </button>
-                ))}
-              </div>
-              <div className="color-row">
-                {PEN_COLORS.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    className={`swatch ${penColor === c ? "on" : ""}`}
-                    style={{ background: c }}
-                    onClick={() => setPenColor(c)}
-                  />
-                ))}
-              </div>
-              <label className="pen-size">
-                {t("textSize", locale)}
-                <input
-                  type="range"
-                  min={0.014}
-                  max={0.045}
-                  step={0.001}
-                  value={textSize}
-                  onChange={(e) => setTextSize(Number(e.target.value))}
-                />
-              </label>
-              <span className="margin-text-hint">{t("marginTextHint", locale)}</span>
-            </>
-          )}
-
-          {tool !== "select" && (
+          </div>
+          <ReaderPager format={format} pageCount={pageCount} />
+          <div className="reader-chrome-dock">
             <button
               type="button"
-              className="btn-ghost compact"
-              onClick={() => void clearPageInk(page)}
+              className={`reader-icon-btn reader-bookmark-btn ${bookmarked ? "is-on" : ""}`}
+              onClick={() => void toggleBookmark(page)}
+              title={bookmarked ? t("removeBookmark", locale) : t("addBookmark", locale)}
+              aria-label={bookmarked ? t("removeBookmark", locale) : t("addBookmark", locale)}
             >
-              {t("clearInk", locale)}
+              {bookmarked ? "★" : "☆"}
             </button>
-          )}
-
-          <button
-            type="button"
-            className="btn-ghost compact"
-            disabled={!selection?.text}
-            onClick={() => void runTranslateSelection()}
-          >
-            {t("translate", locale)}
-          </button>
-        </div>
-
-        <div className="reader-cluster" role="group" aria-label={t("sidebar", locale)}>
-          {panelBtn("toc", t("toc", locale))}
-          {panelBtn("bookmarks", t("bookmarks", locale))}
-          {panelBtn("notes", t("sidebar", locale))}
-          {panelBtn("chat", t("chat", locale))}
-          {format === "pdf" && (
             <button
               type="button"
-              className={`btn-ghost compact ${filmstripOpen ? "is-on" : ""}`}
-              aria-pressed={filmstripOpen}
-              onClick={() => setFilmstripOpen(!filmstripOpen)}
-              title={t(filmstripOpen ? "hidePages" : "showPages", locale)}
+              ref={appearanceBtn}
+              className={`reader-icon-btn ${appearanceOpen ? "is-on" : ""}`}
+              onClick={() => setAppearanceOpen((v) => !v)}
+              title={t("appearance", locale)}
+              aria-label={t("appearance", locale)}
             >
-              {t("pagesPanel", locale)}
+              ◐
             </button>
-          )}
+            {format === "epub" && <EpubTypePanel />}
+            {format === "pdf" && <MarginPanel />}
+            <button
+              type="button"
+              className={`reader-icon-btn ${markupOpen || tool !== "select" ? "is-on" : ""}`}
+              onClick={() => setMarkupOpen((v) => !v)}
+              title={t("markup", locale)}
+              aria-label={t("markup", locale)}
+            >
+              ✎
+            </button>
+            <button
+              type="button"
+              ref={searchBtn}
+              className={`reader-icon-btn ${searchOpen ? "is-on" : ""}`}
+              onClick={() => setSearchOpen((v) => !v)}
+              title={t("search", locale)}
+              aria-label={t("search", locale)}
+            >
+              ⌕
+            </button>
+            {panelBtn("toc", t("toc", locale), "☰")}
+            {panelBtn("notes", t("sidebar", locale), "¶")}
+            {panelBtn("chat", t("chat", locale), "💬")}
+          </div>
         </div>
-      </div>
-    </header>
+        {markupOpen && markup}
+      </header>
+      {appearanceOpen &&
+        typeof document !== "undefined" &&
+        createPortal(appearancePanel, document.body)}
+      {searchOpen &&
+        typeof document !== "undefined" &&
+        createPortal(searchPanel, document.body)}
+    </>
   );
 }

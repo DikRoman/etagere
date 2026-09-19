@@ -8,7 +8,7 @@ import {
   importDriveFileById,
   isDriveConnected,
   parseDriveFileId,
-  pickDriveBook,
+  pickDriveBooks,
 } from "../lib/storage/drive";
 import { extractCoverDataUrl, loadPdf, titleFromFilename } from "../lib/pdf";
 import {
@@ -108,7 +108,7 @@ interface LibraryStore {
     disk?: DiskRef,
   ) => Promise<BookMeta>;
   refreshEpub: (bookId: string) => Promise<local.EpubBundle | null>;
-  importFromDrive: () => Promise<BookMeta | null>;
+  importFromDrive: () => Promise<BookMeta[] | null>;
   importFromDriveLink: (urlOrId: string) => Promise<BookMeta | null>;
   removeBook: (id: string) => Promise<void>;
   removeSelectedBooks: () => Promise<void>;
@@ -166,6 +166,7 @@ export const useLibraryStore = create<LibraryStore>((set, get) => ({
     const keep = get().books.length > 0;
     if (!keep) set({ loading: true });
     try {
+      await local.evictStaleBookFiles();
       const [books, collections] = await Promise.all([
         local.listBooks(),
         local.listCollections(),
@@ -251,6 +252,7 @@ export const useLibraryStore = create<LibraryStore>((set, get) => ({
       contentHash,
       cloudId: existing?.cloudId,
       missingLocalFile: false,
+      openedAt: now,
     };
     book = withDiskIds(
       applyActiveCollection(book, get().libraryFilter),
@@ -314,6 +316,7 @@ export const useLibraryStore = create<LibraryStore>((set, get) => ({
       contentHash,
       cloudId: existing?.cloudId,
       missingLocalFile: false,
+      openedAt: now,
     };
     book = withDiskIds(
       applyActiveCollection(book, get().libraryFilter),
@@ -377,13 +380,16 @@ export const useLibraryStore = create<LibraryStore>((set, get) => ({
   },
 
   importFromDrive: async () => {
-    const picked = await pickDriveBook();
-    if (!picked) return null;
+    const picked = await pickDriveBooks();
+    if (!picked?.length) return null;
 
-    const file = await driveFileToBookFile(picked);
-    const book = await get().addBookFile(file, picked.id);
+    const books: BookMeta[] = [];
+    for (const item of picked) {
+      const file = await driveFileToBookFile(item);
+      books.push(await get().addBookFile(file, item.id));
+    }
     set({ driveConnected: isDriveConnected() });
-    return book;
+    return books;
   },
 
   importFromDriveLink: async (urlOrId) => {

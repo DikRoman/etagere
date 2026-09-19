@@ -80,6 +80,7 @@ interface ReaderStore {
   pressureEnabled: boolean;
   sidebarOpen: boolean;
   sidebarTab: SidebarTab;
+  chromeOpen: boolean;
   scrollRequest: number | null;
   /** EPUB paged mode: which sheet of the current chapter is on screen. */
   epubSheet: { index: number; count: number } | null;
@@ -117,6 +118,8 @@ interface ReaderStore {
   setPressureEnabled: (v: boolean) => void;
   setSidebarOpen: (v: boolean) => void;
   setSidebarTab: (tab: SidebarTab) => void;
+  setChromeOpen: (v: boolean) => void;
+  toggleChrome: () => void;
   openBookmarks: () => void;
   setAiOpen: (v: boolean) => void;
   setAiResult: (v: AiPanelResult | null) => void;
@@ -189,8 +192,9 @@ export const useReaderStore = create<ReaderStore>((set, get) => ({
   textSize: 0.024,
   stylusOnly: false,
   pressureEnabled: true,
-  sidebarOpen: true,
+  sidebarOpen: false,
   sidebarTab: "bookmarks",
+  chromeOpen: true,
   scrollRequest: null,
   epubSheet: null,
   epubTurn: null,
@@ -231,6 +235,7 @@ export const useReaderStore = create<ReaderStore>((set, get) => ({
       epubTurn: null,
       scrollAnchor: null,
       tool: "select",
+      chromeOpen: true,
     });
   },
 
@@ -285,6 +290,8 @@ export const useReaderStore = create<ReaderStore>((set, get) => ({
   setPressureEnabled: (pressureEnabled) => set({ pressureEnabled }),
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
   setSidebarTab: (sidebarTab) => set({ sidebarTab, sidebarOpen: true }),
+  setChromeOpen: (chromeOpen) => set({ chromeOpen }),
+  toggleChrome: () => set((s) => ({ chromeOpen: !s.chromeOpen })),
   openBookmarks: () => set({ sidebarOpen: true, sidebarTab: "bookmarks" }),
   setAiOpen: (aiOpen) => set({ aiOpen }),
   setAiResult: (aiResult) => set({ aiResult }),
@@ -358,7 +365,6 @@ export const useReaderStore = create<ReaderStore>((set, get) => ({
       });
     }
     await get().reloadAnnotations();
-    set({ sidebarOpen: true, sidebarTab: "bookmarks" });
   },
 
   addQuoteFromSelection: async () => {

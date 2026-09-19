@@ -1,4 +1,5 @@
-import type { BookMeta, LibraryFilter } from "./types";
+import type { BookMeta, Collection, LibraryFilter, Locale } from "./types";
+import { t } from "./i18n";
 
 export function bookProgress(book: BookMeta): number {
   return Math.min(
@@ -11,11 +12,52 @@ export function isBookFinished(book: BookMeta): boolean {
   return book.readingStatus === "finished" || bookProgress(book) >= 100;
 }
 
+export function isBookInProgress(book: BookMeta): boolean {
+  const p = bookProgress(book);
+  return book.readingStatus !== "finished" && p > 1 && p < 100;
+}
+
+export function readingNowBooks(books: BookMeta[]): BookMeta[] {
+  return [...books]
+    .filter(isBookInProgress)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+export function libraryHeading(
+  filter: LibraryFilter,
+  collections: Collection[],
+  locale: Locale,
+): string {
+  switch (filter.kind) {
+    case "readingNow":
+      return t("readingNow", locale);
+    case "all":
+      return t("filterAll", locale);
+    case "want":
+      return t("filterWant", locale);
+    case "finished":
+      return t("filterFinished", locale);
+    case "epub":
+      return t("filterBooks", locale);
+    case "pdf":
+      return t("filterPdf", locale);
+    case "collection":
+      return (
+        collections.find((c) => c.id === filter.id)?.name ??
+        t("myCollections", locale)
+      );
+    default:
+      return t("myLibrary", locale);
+  }
+}
+
 export function filterBooks(
   books: BookMeta[],
   filter: LibraryFilter,
 ): BookMeta[] {
   switch (filter.kind) {
+    case "readingNow":
+      return readingNowBooks(books);
     case "all":
       return books;
     case "want":

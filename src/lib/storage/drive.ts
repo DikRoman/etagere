@@ -5,8 +5,15 @@
 
 const TOKEN_KEY = "etagere-drive-token";
 const SCOPE_KEY = "etagere-drive-scope";
+const SESSION_KEY = "etagere-drive-session";
 const SCOPE_FILE = "https://www.googleapis.com/auth/drive.file";
-const SCOPE_READ = "https://www.googleapis.com/auth/drive.readonly";
+const TOKEN_SKEW_MS = 60_000;
+
+type DriveSession = {
+  accessToken?: string;
+  expiresAt?: number;
+  granted?: boolean;
+};
 const BOOK_MIMES = "application/pdf,application/epub+zip";
 const GOOGLE_EXPORT_PDF = "application/vnd.google-apps.document";
 
@@ -32,7 +39,11 @@ declare global {
           initTokenClient: (cfg: {
             client_id: string;
             scope: string;
-            callback: (resp: { access_token?: string; error?: string }) => void;
+            callback: (resp: {
+              access_token?: string;
+              expires_in?: number;
+              error?: string;
+            }) => void;
           }) => { requestAccessToken: (opts?: { prompt?: string }) => void };
         };
       };
@@ -40,6 +51,7 @@ declare global {
         PickerBuilder: new () => PickerBuilderInstance;
         DocsView: new (viewId: string) => DocsViewInstance;
         ViewId: { DOCS: string; PDFS: string };
+        Feature: { MULTISELECT_ENABLED: string };
         Action: { PICKED: string; CANCEL: string };
         Response: { ACTION: string; DOCUMENTS: string };
         Document: { ID: string; NAME: string; MIME_TYPE: string };
@@ -60,6 +72,7 @@ interface PickerBuilderInstance {
   setDeveloperKey: (key: string) => PickerBuilderInstance;
   setOrigin: (origin: string) => PickerBuilderInstance;
   addView: (view: DocsViewInstance) => PickerBuilderInstance;
+  enableFeature: (feature: string) => PickerBuilderInstance;
   setCallback: (cb: (data: PickerResponse) => void) => PickerBuilderInstance;
   build: () => { setVisible: (v: boolean) => void };
 }
@@ -92,33 +105,51 @@ export function isDriveConfigured(): boolean {
   return Boolean(clientId());
 }
 
+function readDriveSession(): DriveSession | null {
+  if (typeof window === "undefined") return null;
+  const raw = localStorage.getItem(SESSION_KEY);
+  if (raw) {
+    try {
+      return JSON.parse(raw) as DriveSession;
+    } catch {
+      /* fall through */
+    }
+  }
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (!token) return null;
+  return { accessToken: token, granted: true };
+}
+
+function writeDriveSession(row: DriveSession): void {
+  localStorage.setItem(SESSION_KEY, JSON.stringify(row));
+  if (row.accessToken) localStorage.setItem(TOKEN_KEY, row.accessToken);
+}
+
 export function isDriveConnected(): boolean {
-  if (typeof window === "undefined") return false;
-  return Boolean(localStorage.getItem(TOKEN_KEY));
+  const row = readDriveSession();
+  return Boolean(row?.granted || row?.accessToken);
 }
 
 function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(TOKEN_KEY);
+  const row = readDriveSession();
+  if (!row?.accessToken) return null;
+  if (!row.expiresAt || Date.now() > row.expiresAt - TOKEN_SKEW_MS) return null;
+  return row.accessToken;
 }
 
-function setToken(token: string, scope = SCOPE_FILE) {
-  localStorage.setItem(TOKEN_KEY, token);
+function setToken(token: string, scope = SCOPE_FILE, expiresInSec = 3600) {
+  writeDriveSession({
+    accessToken: token,
+    expiresAt: Date.now() + expiresInSec * 1000,
+    granted: true,
+  });
   localStorage.setItem(SCOPE_KEY, scope);
 }
 
 export function disconnectDrive(): void {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(SCOPE_KEY);
-}
-
-function storedScope(): string {
-  if (typeof window === "undefined") return "";
-  return localStorage.getItem(SCOPE_KEY) || "";
-}
-
-function hasReadScope(): boolean {
-  return storedScope().includes("drive.readonly");
+  localStorage.removeItem(SESSION_KEY);
 }
 
 function linkAccessError(): string {
@@ -265,6 +296,8 @@ function ensureExtension(name: string, mimeType: string): string {
 export async function connectDrive(opts?: {
   forceConsent?: boolean;
   scope?: string;
+  /** GIS always opens an account window. Only true after a user click. */
+  interactive?: boolean;
 }): Promise<DriveConnectResult> {
   const id = clientId();
   if (!id) {
@@ -274,11 +307,15 @@ export async function connectDrive(opts?: {
     };
   }
 
+  if (opts?.interactive === false) {
+    return { ok: false, message: "Drive token expired" };
+  }
+
   const scope = opts?.scope || SCOPE_FILE;
 
   try {
     await loadGis();
-    const token = await new Promise<string>((resolve, reject) => {
+    await new Promise<string>((resolve, reject) => {
       const client = window.google!.accounts.oauth2.initTokenClient({
         client_id: id,
         scope,
@@ -287,14 +324,15 @@ export async function connectDrive(opts?: {
             reject(new Error(resp.error || "No token"));
             return;
           }
+          setToken(resp.access_token, scope, resp.expires_in || 3600);
           resolve(resp.access_token);
         },
       });
+      const granted = isDriveConnected();
       const prompt =
-        opts?.forceConsent || !getToken() ? "consent" : "";
+        opts?.forceConsent ? "consent" : granted ? "" : "consent";
       client.requestAccessToken({ prompt });
     });
-    setToken(token, scope);
     return {
       ok: true,
       message: "Google Drive подключён.",
@@ -311,34 +349,61 @@ export async function connectDrive(opts?: {
   }
 }
 
-async function ensureDriveToken(
-  force = false,
-  scope = SCOPE_FILE,
-): Promise<string> {
-  const needRead = scope.includes("drive.readonly");
-  if (!force && getToken() && (!needRead || hasReadScope())) {
-    return getToken()!;
+let driveTokenInFlight: Promise<string> | null = null;
+
+export async function ensureDriveToken(opts?: {
+  force?: boolean;
+  interactive?: boolean;
+}): Promise<string> {
+  const force = Boolean(opts?.force);
+  const interactive = opts?.interactive === true;
+  if (!force) {
+    const live = getToken();
+    if (live) return live;
+    if (!interactive) throw new Error("Drive token expired");
+    if (driveTokenInFlight) return driveTokenInFlight;
+  } else if (!interactive) {
+    throw new Error("Drive token expired");
   }
-  if (force) disconnectDrive();
-  const result = await connectDrive({
-    forceConsent: force || (needRead && !hasReadScope()),
-    scope: needRead ? `${SCOPE_FILE} ${SCOPE_READ}` : SCOPE_FILE,
-  });
-  if (!result.ok) throw new Error(result.message);
-  const token = getToken();
-  if (!token) throw new Error("No Drive token");
-  return token;
+  const pending = (async () => {
+    const result = await connectDrive({
+      forceConsent: force,
+      scope: SCOPE_FILE,
+      interactive: true,
+    });
+    if (!result.ok) throw new Error(result.message);
+    const token = getToken();
+    if (!token) throw new Error("No Drive token");
+    return token;
+  })();
+  if (!force) driveTokenInFlight = pending;
+  try {
+    return await pending;
+  } finally {
+    if (driveTokenInFlight === pending) driveTokenInFlight = null;
+  }
 }
 
 async function validateDriveToken(token: string): Promise<boolean> {
-  const res = await fetch(
-    "https://www.googleapis.com/drive/v3/about?fields=user",
-    { headers: { Authorization: `Bearer ${token}` } },
-  );
-  return res.ok;
+  try {
+    const res = await fetch("/api/cloud/gdrive/ping", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
-export async function pickDriveBook(): Promise<DrivePickedFile | null> {
+/** Check the current Drive token. Never opens a Google sign-in window. */
+export async function keepDriveAlive(): Promise<void> {
+  if (!isDriveConnected()) return;
+  const live = getToken();
+  if (!live) return;
+  await validateDriveToken(live);
+}
+
+export async function pickDriveBooks(): Promise<DrivePickedFile[] | null> {
   if (!isDriveConfigured()) {
     throw new Error("Google Drive не настроен на сервере.");
   }
@@ -350,10 +415,9 @@ export async function pickDriveBook(): Promise<DrivePickedFile | null> {
     );
   }
 
-  let token = await ensureDriveToken();
+  let token = await ensureDriveToken({ interactive: true });
   if (!(await validateDriveToken(token))) {
-    disconnectDrive();
-    token = await ensureDriveToken(true);
+    token = await ensureDriveToken({ force: true, interactive: true });
   }
 
   await loadPickerApi();
@@ -368,7 +432,7 @@ export async function pickDriveBook(): Promise<DrivePickedFile | null> {
     let settled = false;
     let sawPickerFrame = false;
 
-    const finish = (value: DrivePickedFile | null) => {
+    const finish = (value: DrivePickedFile[] | null) => {
       if (settled) return;
       settled = true;
       window.clearTimeout(failTimer);
@@ -398,7 +462,8 @@ export async function pickDriveBook(): Promise<DrivePickedFile | null> {
           new picker.DocsView(picker.ViewId.DOCS)
             .setIncludeFolders(true)
             .setMimeTypes(BOOK_MIMES),
-        );
+        )
+        .enableFeature(picker.Feature.MULTISELECT_ENABLED);
 
       builder.setCallback((data) => {
         sawPickerFrame = true;
@@ -409,17 +474,22 @@ export async function pickDriveBook(): Promise<DrivePickedFile | null> {
         }
         if (action !== "picked") return;
 
-        const doc = pickerDocs(data, picker)[0];
-        const id = doc ? docField(doc, picker, "ID") : "";
-        if (!id) {
+        const docs = pickerDocs(data, picker);
+        const files: DrivePickedFile[] = [];
+        for (const doc of docs) {
+          const id = docField(doc, picker, "ID");
+          if (!id) continue;
+          files.push({
+            id,
+            name: docField(doc, picker, "NAME") || "book.pdf",
+            mimeType: docField(doc, picker, "MIME_TYPE") || "application/pdf",
+          });
+        }
+        if (!files.length) {
           fail(new Error("Google Picker не вернул ID файла."));
           return;
         }
-        finish({
-          id,
-          name: docField(doc, picker, "NAME") || "book.pdf",
-          mimeType: docField(doc, picker, "MIME_TYPE") || "application/pdf",
-        });
+        finish(files);
       });
 
       builder.build().setVisible(true);
@@ -479,25 +549,77 @@ async function driveDownload(
   return { blob, name, mimeType };
 }
 
+async function driveDownloadViaProxy(
+  fileId: string,
+  token: string,
+): Promise<{ blob: Blob; name: string; mimeType: string } | "unauthorized" | null> {
+  const res = await fetch(
+    `/api/cloud/gdrive/file?id=${encodeURIComponent(fileId)}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (res.status === 401) return "unauthorized";
+  if (res.status === 403 || res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`Не удалось скачать файл (${res.status}).`);
+  }
+  const blob = await res.blob();
+  if (blob.size < 1) return null;
+  if (blob.type.includes("text/html") && blob.size < 512_000) {
+    throw new Error(
+      "Drive вернул HTML вместо файла. Проверь доступ к файлу или попробуй другой PDF.",
+    );
+  }
+  const mimeType =
+    decodeURIComponent(res.headers.get("x-mime-type") || "") ||
+    blob.type ||
+    "application/pdf";
+  const rawName = res.headers.get("x-file-name") || "book.pdf";
+  let name = "book.pdf";
+  try {
+    name = decodeURIComponent(rawName);
+  } catch {
+    name = rawName;
+  }
+  return { blob, name: ensureExtension(name, mimeType), mimeType };
+}
+
 export async function downloadDriveFile(
   fileId: string,
+  opts?: { interactive?: boolean },
 ): Promise<{ blob: Blob; name: string; mimeType: string }> {
-  const key = apiKey();
-  const token = getToken();
+  const interactive = opts?.interactive !== false;
+  let token: string | null = null;
+  try {
+    token = await ensureDriveToken({ interactive });
+  } catch {
+    token = getToken();
+  }
 
   if (token) {
-    const viaToken = await driveDownload(fileId, { token });
-    if (viaToken) return viaToken;
+    const first = await driveDownloadViaProxy(fileId, token);
+    if (first && first !== "unauthorized") return first;
+    if (first === "unauthorized" && interactive) {
+      try {
+        token = await ensureDriveToken({ force: true, interactive: true });
+        const retry = await driveDownloadViaProxy(fileId, token);
+        if (retry && retry !== "unauthorized") return retry;
+      } catch {
+        /* fall through */
+      }
+    }
   }
 
-  if (key) {
-    const viaKey = await driveDownload(fileId, { key });
-    if (viaKey) return viaKey;
+  if (interactive) {
+    const key = apiKey();
+    if (key) {
+      try {
+        const viaKey = await driveDownload(fileId, { key });
+        if (viaKey) return viaKey;
+      } catch {
+        /* private files 403 via key */
+      }
+    }
   }
-
-  const readToken = await ensureDriveToken(false, SCOPE_READ);
-  const viaRead = await driveDownload(fileId, { token: readToken });
-  if (viaRead) return viaRead;
 
   throw new Error(linkAccessError());
 }
@@ -517,10 +639,6 @@ export async function importDriveFileById(
     const owned = await fetchDriveFileMeta(fileId, { token });
     if (owned) return owned;
   }
-
-  const readToken = await ensureDriveToken(false, SCOPE_READ);
-  const readable = await fetchDriveFileMeta(fileId, { token: readToken });
-  if (readable) return readable;
 
   throw new Error(linkAccessError());
 }
@@ -571,6 +689,31 @@ async function ensureEtagereFolder(token: string): Promise<string> {
   if (!row.id) throw new Error("Drive folder missing id");
   folderIdMemo = row.id;
   return row.id;
+}
+
+export async function listDriveBooks(): Promise<
+  { id: string; name: string; mimeType?: string }[]
+> {
+  const token = await ensureDriveToken();
+  const folderId = await ensureEtagereFolder(token);
+  const q = encodeURIComponent(
+    `'${folderId}' in parents and trashed=false and (mimeType='application/pdf' or mimeType='application/epub+zip' or name contains '.pdf' or name contains '.epub')`,
+  );
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,mimeType)&pageSize=200`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!res.ok) throw new Error(`Drive list ${res.status}`);
+  const data = (await res.json()) as {
+    files?: { id?: string; name?: string; mimeType?: string }[];
+  };
+  return (data.files ?? [])
+    .filter((f) => f.id && /\.(pdf|epub)$/i.test(f.name || ""))
+    .map((f) => ({
+      id: f.id!,
+      name: f.name || "book.pdf",
+      mimeType: f.mimeType,
+    }));
 }
 
 /** Upload a book into the user's Étagère folder. Returns Drive file id. */

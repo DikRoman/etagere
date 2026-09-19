@@ -24,6 +24,7 @@ import type { TextRect } from "@/lib/types";
 import { useReaderStore } from "@/store/reader";
 import { useSettingsStore } from "@/store/settings";
 import { applyReaderWheelZoom } from "@/lib/reader-zoom";
+import { isPlainReaderTap, readerTapZone } from "@/lib/reader-chrome";
 
 const TURN_MS = 360;
 
@@ -296,14 +297,19 @@ export function EpubViewer({ bookId }: { bookId: string }) {
         | undefined;
       const box = iframe?.getBoundingClientRect();
       if (!box) return;
-      const x = box.left + event.clientX;
+      const wx = box.left + event.clientX;
+      const wy = box.top + event.clientY;
       const start = pressAt.current;
-      if (start && Math.hypot(x - start.x, event.clientY - start.y) > 6) {
+      if (start && !isPlainReaderTap(start, wx, wy)) {
         return;
       }
-      const edge = Math.min(64, Math.max(28, box.width * 0.06));
-      if (event.clientX <= edge) turn(-1);
-      else if (box.width - event.clientX <= edge) turn(1);
+      const zone = readerTapZone(event.clientX, {
+        left: 0,
+        width: box.width,
+      });
+      if (zone === "prev") turn(-1);
+      else if (zone === "next") turn(1);
+      else useReaderStore.getState().toggleChrome();
     });
 
     applying.current = true;

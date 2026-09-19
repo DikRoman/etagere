@@ -4,9 +4,12 @@ import { useEffect } from "react";
 import { useAuthStore } from "@/store/auth";
 import { useLibraryStore } from "@/store/library";
 import { runFullSync } from "@/lib/sync/library-sync";
+import { refreshCloudSessions } from "@/lib/cloud/session";
+import { keepDriveAlive } from "@/lib/storage/drive";
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const hydrate = useAuthStore((s) => s.hydrate);
+  const keepAlive = useAuthStore((s) => s.keepAlive);
   const user = useAuthStore((s) => s.user);
   const ready = useAuthStore((s) => s.ready);
   const libraryHydrate = useLibraryStore((s) => s.hydrate);
@@ -16,9 +19,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [hydrate]);
 
   useEffect(() => {
+    const ping = () => {
+      void keepAlive();
+      void refreshCloudSessions();
+      void keepDriveAlive();
+    };
+    ping();
+    const id = window.setInterval(ping, 5 * 60 * 1000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") ping();
+    };
+    window.addEventListener("online", ping);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener("online", ping);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [keepAlive]);
+
+  useEffect(() => {
     if (!ready || !user) return;
     let cancelled = false;
     void (async () => {
+      await refreshCloudSessions();
+      await keepDriveAlive();
       await runFullSync();
       if (!cancelled) await libraryHydrate();
     })();

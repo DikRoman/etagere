@@ -293,6 +293,75 @@ export async function hasLocalBookFile(bookId: string): Promise<boolean> {
   }
 }
 
+/** Drop the PDF/EPUB from this browser after 5 days without opening. */
+export const BOOK_FILE_TTL_MS = 5 * 24 * 60 * 60 * 1000;
+
+export function hasCloudBookCopy(book: BookMeta): boolean {
+  return Boolean(book.hasCloudFile || book.driveFileId || book.cloudFileId);
+}
+
+export function isBookFileWarm(book: BookMeta, at = new Date()): boolean {
+  if (!book.openedAt) return false;
+  const opened = Date.parse(book.openedAt);
+  if (!Number.isFinite(opened)) return false;
+  return at.getTime() - opened <= BOOK_FILE_TTL_MS;
+}
+
+export async function deleteLocalBookFile(book: BookMeta): Promise<void> {
+  const db = await openDb();
+  const stores = [FILES_STORE, EPUB_STORE, TOC_STORE].filter((name) =>
+    hasStore(db, name),
+  );
+  if (!stores.length) return;
+  const keys = [...new Set([book.id, book.localFileKey].filter(Boolean))];
+  const tx = db.transaction(stores, "readwrite");
+  for (const name of stores) {
+    const store = tx.objectStore(name);
+    for (const key of keys) store.delete(key);
+  }
+  await txDone(tx);
+}
+
+export async function touchBookOpened(
+  bookId: string,
+  at = new Date(),
+): Promise<void> {
+  const book = await getBook(bookId);
+  if (!book) return;
+  const iso = at.toISOString();
+  if (book.openedAt && Date.parse(iso) - Date.parse(book.openedAt) < 60 * 60 * 1000) {
+    return;
+  }
+  await saveBook({ ...book, openedAt: iso });
+}
+
+/** Remove stale local files that can be downloaded again from the user's disk. */
+export async function evictStaleBookFiles(at = new Date()): Promise<number> {
+  const db = await openDb();
+  if (!hasStore(db, BOOKS_STORE)) return 0;
+  const books = (await idbGetAll<BookMeta>(db, BOOKS_STORE)).map(normalizeBook);
+  let n = 0;
+  for (const book of books) {
+    const hasFile = await hasLocalBookFile(book.id);
+    if (!hasFile) {
+      if (!book.missingLocalFile && hasCloudBookCopy(book)) {
+        await saveBook({ ...book, missingLocalFile: true });
+      }
+      continue;
+    }
+    if (!hasCloudBookCopy(book)) continue;
+    if (!book.openedAt) {
+      await saveBook({ ...book, openedAt: at.toISOString() });
+      continue;
+    }
+    if (isBookFileWarm(book, at)) continue;
+    await deleteLocalBookFile(book);
+    await saveBook({ ...book, missingLocalFile: true });
+    n += 1;
+  }
+  return n;
+}
+
 export interface EpubBundle {
   chapters: EpubChapter[];
   toc?: TocItem[];
@@ -641,6 +710,7 @@ export async function updateLastPage(
   if (!book) return;
   book.lastPage = page;
   book.updatedAt = new Date().toISOString();
+  book.openedAt = new Date().toISOString();
   await saveBook(book);
   void import("../sync/library-sync").then((m) => m.scheduleSync(bookId));
 }

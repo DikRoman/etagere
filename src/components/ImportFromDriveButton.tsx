@@ -20,12 +20,19 @@ export function ImportFromDriveButton() {
     setStatus(null);
     try {
       const result = await fn();
-      if (result == null) {
+      if (result == null || (Array.isArray(result) && result.length === 0)) {
         setStatus(locale === "ru" ? "Импорт отменён." : "Import cancelled.");
         return;
       }
+      const n = Array.isArray(result) ? result.length : 1;
       setStatus(
-        locale === "ru" ? "Книга добавлена на полку." : "Book added to your shelf.",
+        n === 1
+          ? locale === "ru"
+            ? "Книга добавлена на полку."
+            : "Book added to your shelf."
+          : locale === "ru"
+            ? `Добавлено книг: ${n}.`
+            : `Added ${n} books.`,
       );
       setLink("");
     } catch (e) {

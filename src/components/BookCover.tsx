@@ -506,11 +506,13 @@ export function BookCover({ book, index, part = "cover" }: BookCoverProps) {
       onContextMenu={onCoverContextMenu}
     >
       <div className="book-foot">
-        {isNew ? (
-          <span className="book-new-badge">{t("newBadge", locale)}</span>
-        ) : (
-          <span className="book-progress-label">{progress} %</span>
-        )}
+        <div className="book-copy">
+          <p className="book-title">{book.title}</p>
+          <p className="book-meta">
+            {book.author || t("unknownAuthor", locale)}
+            {isNew ? ` · ${t("newBadge", locale)}` : ` · ${progress}%`}
+          </p>
+        </div>
         <button
           ref={menuBtnRef}
           type="button"

@@ -214,6 +214,7 @@ export interface EpubChapter {
 export type ReadingStatus = "none" | "want" | "finished";
 
 export type LibraryFilter =
+  | { kind: "readingNow" }
   | { kind: "all" }
   | { kind: "want" }
   | { kind: "finished" }
@@ -240,6 +241,8 @@ export interface BookMeta {
   lastPage: number;
   addedAt: string;
   updatedAt: string;
+  /** Last time this device opened the reader. Local cache only. */
+  openedAt?: string;
   sizeBytes: number;
   tags: string[];
   collectionIds: string[];

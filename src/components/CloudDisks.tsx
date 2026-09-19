@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLibraryStore } from "@/store/library";
 import { useSettingsStore } from "@/store/settings";
 import { t } from "@/lib/i18n";
@@ -11,6 +11,7 @@ import {
   isProviderConfigured,
   isProviderConnected,
   providerLabel,
+  refreshCloudSessions,
   type CloudProvider,
 } from "@/lib/cloud/session";
 import {
@@ -30,6 +31,7 @@ export function CloudDisks() {
   const [picker, setPicker] = useState<{
     provider: CloudProvider;
     items: CloudPick[];
+    selected: string[];
   } | null>(null);
 
   const connected = useMemo(() => {
@@ -41,6 +43,19 @@ export function CloudDisks() {
 
   const ru = locale === "ru";
 
+  useEffect(() => {
+    let cancelled = false;
+    void refreshCloudSessions().then(() => {
+      if (!cancelled) {
+        refreshDriveFlag();
+        setTick((n) => n + 1);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshDriveFlag]);
+
   async function connect(provider: CloudProvider) {
     setStatus(null);
     setBusy(provider);
@@ -50,7 +65,7 @@ export function CloudDisks() {
         refreshDriveFlag();
         setStatus(result.message);
       } else {
-        window.location.href = `/api/cloud/${provider}/start`;
+        window.location.assign(`/api/cloud/${provider}/start`);
         return;
       }
     } catch (e) {
@@ -72,16 +87,8 @@ export function CloudDisks() {
     setStatus(null);
     try {
       if (provider === "gdrive") {
-        const book = await importFromDrive();
-        setStatus(
-          book
-            ? ru
-              ? "Книга добавлена на полку."
-              : "Book added to your shelf."
-            : ru
-              ? "Импорт отменён."
-              : "Import cancelled.",
-        );
+        const books = await importFromDrive();
+        setStatus(importStatus(books, ru));
         return;
       }
       const items = await listCloudBooks(provider);
@@ -93,7 +100,7 @@ export function CloudDisks() {
         );
         return;
       }
-      setPicker({ provider, items });
+      setPicker({ provider, items, selected: [] });
     } catch (e) {
       setStatus(e instanceof Error ? e.message : "Error");
     } finally {
@@ -101,17 +108,38 @@ export function CloudDisks() {
     }
   }
 
-  async function pickItem(item: CloudPick) {
+  function togglePick(id: string) {
+    setPicker((cur) => {
+      if (!cur) return cur;
+      const on = cur.selected.includes(id);
+      return {
+        ...cur,
+        selected: on
+          ? cur.selected.filter((x) => x !== id)
+          : [...cur.selected, id],
+      };
+    });
+  }
+
+  async function importPicked() {
     if (!picker) return;
+    const chosen = picker.items.filter((item) =>
+      picker.selected.includes(item.id),
+    );
+    if (!chosen.length) return;
     setBusy("pick");
     try {
-      const file = await downloadCloudPick(picker.provider, item);
-      await addBookFile(file, picker.provider === "gdrive" ? item.id : undefined, undefined, {
-        provider: picker.provider,
-        fileId: item.id,
-      });
+      for (const item of chosen) {
+        const file = await downloadCloudPick(picker.provider, item);
+        await addBookFile(
+          file,
+          picker.provider === "gdrive" ? item.id : undefined,
+          undefined,
+          { provider: picker.provider, fileId: item.id },
+        );
+      }
       setPicker(null);
-      setStatus(ru ? "Книга добавлена на полку." : "Book added to your shelf.");
+      setStatus(importStatus(chosen, ru));
     } catch (e) {
       setStatus(e instanceof Error ? e.message : "Error");
     } finally {
@@ -178,33 +206,58 @@ export function CloudDisks() {
       {picker && (
         <div className="cloud-disk-picker">
           <p>
-            {ru ? "Выбери файл в" : "Pick a file in"}{" "}
+            {ru ? "Отметь книги в" : "Select books in"}{" "}
             {providerLabel(picker.provider, locale)}
           </p>
           <ul>
-            {picker.items.map((item) => (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  className="btn-ghost"
-                  disabled={busy !== null}
-                  onClick={() => void pickItem(item)}
-                >
-                  {item.name}
-                </button>
-              </li>
-            ))}
+            {picker.items.map((item) => {
+              const on = picker.selected.includes(item.id);
+              return (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    className={`btn-ghost ${on ? "is-on" : ""}`}
+                    disabled={busy !== null}
+                    onClick={() => togglePick(item.id)}
+                  >
+                    {item.name}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
-          <button
-            type="button"
-            className="btn-ghost"
-            onClick={() => setPicker(null)}
-          >
-            {t("cancel", locale)}
-          </button>
+          <div className="cloud-disk-picker-actions">
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={busy !== null || picker.selected.length === 0}
+              onClick={() => void importPicked()}
+            >
+              {ru
+                ? `Добавить (${picker.selected.length})`
+                : `Add (${picker.selected.length})`}
+            </button>
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => setPicker(null)}
+            >
+              {t("cancel", locale)}
+            </button>
+          </div>
         </div>
       )}
       {status && <p className="drive-hint">{status}</p>}
     </div>
   );
+}
+
+function importStatus(books: unknown[] | null, ru: boolean): string {
+  if (!books?.length) return ru ? "Импорт отменён." : "Import cancelled.";
+  if (books.length === 1) {
+    return ru ? "Книга добавлена на полку." : "Book added to your shelf.";
+  }
+  return ru
+    ? `Добавлено книг: ${books.length}.`
+    : `Added ${books.length} books.`;
 }

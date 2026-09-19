@@ -1,12 +1,14 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
+import Link from "next/link";
 import { useLibraryStore } from "@/store/library";
 import { useSettingsStore } from "@/store/settings";
 import { t } from "@/lib/i18n";
 import { collectionBookCount } from "@/lib/library-filters";
 import type { LibraryFilter } from "@/lib/types";
 import { SyncStatusLine } from "@/components/SyncStatusLine";
+import { dueVocabEntries, listVocabEntries } from "@/lib/vocab";
 
 function NavIcon({ name }: { name: string }) {
   const common = {
@@ -23,6 +25,16 @@ function NavIcon({ name }: { name: string }) {
           <path
             fill="currentColor"
             d="M4 4h5v5H4V4Zm0 7h5v5H4v-5Zm7-7h5v5h-5V4Zm0 7h5v5h-5v-5Z"
+          />
+        </svg>
+      );
+    case "now":
+      return (
+        <svg {...common}>
+          <path
+            fill="currentColor"
+            d="M6 3.5h9.5A2.5 2.5 0 0 1 18 6v13.2l-5.2-2.4L7.5 19.2V6A2.5 2.5 0 0 1 10 3.5H6Z"
+            opacity="0.95"
           />
         </svg>
       );
@@ -74,6 +86,16 @@ function NavIcon({ name }: { name: string }) {
           <path fill="currentColor" d="M5 6h14v2H5V6Zm0 5h14v2H5v-2Zm0 5h14v2H5v-2Z" />
         </svg>
       );
+    case "vocab":
+      return (
+        <svg {...common}>
+          <path
+            fill="currentColor"
+            d="M5 4h9a2 2 0 0 1 2 2v12.5l-4.5-1.7L7 18.5V6a2 2 0 0 1 2-2H5Zm11 2h3a2 2 0 0 1 2 2v11l-3.5-1.3L14 19V8a2 2 0 0 1 2-2Z"
+            opacity="0.95"
+          />
+        </svg>
+      );
     default:
       return null;
   }
@@ -100,8 +122,24 @@ export function LibrarySidebar() {
 
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState("");
+  const [vocabDue, setVocabDue] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    void listVocabEntries().then((rows) => {
+      if (!cancelled) setVocabDue(dueVocabEntries(rows).length);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const libraryItems: { filter: LibraryFilter; label: string; icon: string }[] = [
+    {
+      filter: { kind: "readingNow" },
+      label: t("readingNow", locale),
+      icon: "now",
+    },
     { filter: { kind: "all" }, label: t("filterAll", locale), icon: "all" },
     { filter: { kind: "want" }, label: t("filterWant", locale), icon: "want" },
     {
@@ -144,6 +182,15 @@ export function LibrarySidebar() {
               </button>
             </li>
           ))}
+          <li>
+            <Link href="/vocab" className="library-nav-btn">
+              <NavIcon name="vocab" />
+              <span className="library-nav-label">{t("wordLookup", locale)}</span>
+              {vocabDue > 0 && (
+                <span className="library-nav-count">{vocabDue}</span>
+              )}
+            </Link>
+          </li>
         </ul>
       </div>
 

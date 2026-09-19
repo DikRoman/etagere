@@ -52,7 +52,7 @@ export const useSettingsStore = create<SettingsState>()(
       sidebarWidth: SIDEBAR_WIDTH_DEFAULT,
       marginNotes: true,
       marginRatio: MARGIN_RATIO_DEFAULT,
-      filmstripOpen: true,
+      filmstripOpen: false,
       dailyGoal: 20,
       setLocale: (locale) => set({ locale }),
       setTheme: (theme) => set({ theme }),

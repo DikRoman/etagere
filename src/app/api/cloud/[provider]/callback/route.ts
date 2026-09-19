@@ -4,6 +4,8 @@ import {
   exchangeDropboxCode,
   exchangeOnedriveCode,
   exchangeYandexDiskCode,
+  REFRESH_COOKIE,
+  refreshCookieName,
 } from "@/lib/cloud/oauth-server";
 import { appOrigin } from "@/lib/vk-id";
 
@@ -60,9 +62,20 @@ export async function GET(
     );
     res.cookies.set(
       `cloud_${provider}_session`,
-      JSON.stringify(tokens),
+      JSON.stringify({
+        access_token: tokens.access_token,
+        expires_in: tokens.expires_in,
+        has_refresh: Boolean(tokens.refresh_token),
+      }),
       SESSION,
     );
+    if (tokens.refresh_token) {
+      res.cookies.set(
+        refreshCookieName(provider),
+        tokens.refresh_token,
+        REFRESH_COOKIE,
+      );
+    }
     return res;
   } catch (e) {
     console.error("[cloud/callback]", provider, e);

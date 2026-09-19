@@ -31,9 +31,12 @@ export default function CloudCompletePage() {
         const data = (await res.json().catch(() => ({}))) as {
           access_token?: string;
           expires_in?: number;
+          has_refresh?: boolean;
         };
         if (!res.ok || !data.access_token) throw new Error("NO_SESSION");
-        setAccessToken(provider, data.access_token, data.expires_in);
+        setAccessToken(provider, data.access_token, data.expires_in, {
+          hasRefresh: Boolean(data.has_refresh),
+        });
         if (!cancelled) router.replace("/");
       } catch {
         if (!cancelled) {

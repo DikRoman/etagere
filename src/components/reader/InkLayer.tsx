@@ -5,6 +5,7 @@ import { useReaderStore } from "@/store/reader";
 import { useSettingsStore } from "@/store/settings";
 import type { InkPoint, InkStroke } from "@/lib/types";
 import {
+  MARGIN_GUTTER_PX,
   migrateLegacyInk,
   packDrawnStroke,
   strokeOverlayPoints,
@@ -80,6 +81,7 @@ export function InkLayer({
   const removeInkStroke = useReaderStore((s) => s.removeInkStroke);
   const updateInkStroke = useReaderStore((s) => s.updateInkStroke);
   const storedRatio = useSettingsStore((s) => s.marginRatio);
+  const gutter = marginWidth >= 8 ? MARGIN_GUTTER_PX : 0;
   const [draft, setDraft] = useState<InkPoint[] | null>(null);
   const migrated = useRef(new Set<string>());
 
@@ -115,12 +117,13 @@ export function InkLayer({
         pageWidth,
         marginWidth,
         storedRatio,
+        gutter,
       );
       if (!points || points.length < 2) continue;
       ctx.save();
       ctx.beginPath();
       if (s.space === "margin" && marginWidth >= 8) {
-        ctx.rect(pageWidth, 0, marginWidth, height);
+        ctx.rect(pageWidth + gutter, 0, marginWidth, height);
         ctx.clip();
       } else if (s.space === "page" && marginWidth >= 8) {
         ctx.rect(0, 0, pageWidth, height);
@@ -137,6 +140,7 @@ export function InkLayer({
     height,
     pageWidth,
     marginWidth,
+    gutter,
     storedRatio,
     strokes,
     draft,
@@ -172,6 +176,7 @@ export function InkLayer({
         pageWidth,
         marginWidth,
         storedRatio,
+        gutter,
       );
       if (!points) continue;
       if (points.some((p) => Math.hypot(p.x - x, p.y - y) <= radius)) {
@@ -241,7 +246,12 @@ export function InkLayer({
 
     if (tool !== "pen" || points.length < 2) return;
 
-    for (const packed of packDrawnStroke(points, pageWidth, marginWidth)) {
+    for (const packed of packDrawnStroke(
+      points,
+      pageWidth,
+      marginWidth,
+      gutter,
+    )) {
       void addInkStroke({
         page,
         color: penColor,

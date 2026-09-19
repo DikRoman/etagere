@@ -44,6 +44,7 @@ interface AuthState {
     passwordConfirm: string;
   }) => Promise<void>;
   refreshSubscription: () => Promise<void>;
+  keepAlive: () => Promise<void>;
   startYookassaCheckout: () => Promise<void>;
   cancelYookassaRenew: () => Promise<void>;
   resumeYookassaRenew: () => Promise<void>;
@@ -121,16 +122,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       await refreshAuthSession();
 
       const user = pb.authStore.record;
-      // Password sign-ups must verify email; OAuth (VK) users are trusted.
+      // Password sign-ups must verify email; OAuth users are trusted.
       if (user && !user.verified) {
-        const providers = await pb
-          .collection("users")
-          .listExternalAuths(user.id)
-          .catch(() => []);
-        if (!providers.length) {
-          pb.authStore.clear();
-          set({ user: null, subscription: null, ready: true, error: null });
-          return;
+        try {
+          const providers = await pb
+            .collection("users")
+            .listExternalAuths(user.id);
+          if (!providers.length) {
+            pb.authStore.clear();
+            set({ user: null, subscription: null, ready: true, error: null });
+            return;
+          }
+        } catch {
+          /* Keep the session if PocketBase is briefly unreachable. */
         }
       }
 
@@ -144,6 +148,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       await hydratePromise;
     } finally {
       hydratePromise = null;
+    }
+  },
+
+  keepAlive: async () => {
+    const pb = getPb();
+    const hadUser = Boolean(get().user);
+    await refreshAuthSession();
+    const current = pb.authStore.record;
+    if (!current) {
+      if (hadUser && !pb.authStore.isValid) {
+        set({ user: null, subscription: null });
+      }
+      return;
+    }
+    if (get().user?.id !== current.id) {
+      set({ user: current });
     }
   },
 

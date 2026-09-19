@@ -32,8 +32,8 @@ https://drive.google.com/file/d/FILE_ID/view
 | Store | `src/store/library.ts` → `importFromDrive`, `importFromDriveLink` |
 
 **Scope:**
-- кнопка **«Добавить с Google Drive»** — `drive.file` (только выбранные файлы) + Google Picker
-- вставка ссылки — прямое скачивание по ID (`drive.readonly` или публичный файл по API key)
+- кнопка **«Добавить с Google Drive»** — только `drive.file` (выбранные файлы) + Google Picker
+- вставка ссылки — публичный файл по API key или файл, уже выбранный через Picker. Закрытый чужой файл без «всем по ссылке» не откроется — так мы не просим доступ ко всему диску.
 
 Токен хранится в `localStorage` (`etagere-drive-token`).
 
@@ -52,8 +52,12 @@ https://drive.google.com/file/d/FILE_ID/view
 - App name: **Étagère**
 - User support email: Gmail владельца проекта (или Workspace-email)
 - Authorized domains: `etagere.ru`
-- Scopes: **`…/auth/drive.file`** и **`…/auth/drive.readonly`** (readonly нужен для импорта по ссылке)
+- Scopes: **только `…/auth/drive.file`**. Не добавляй `drive.readonly` — это restricted, из‑за него Google показывает «приложение не проверено» и требует дорогой аудит.
+- Homepage: `https://etagere.ru`
+- Privacy: `https://etagere.ru/privacy`
+- Terms: `https://etagere.ru/terms`
 - **Publish app** (In production) — чтобы могли все пользователи, не только test users
+- Затем **Verification Center → Submit for verification**. Для `drive.file` достаточно brand-проверки: описание, скриншоты и короткое видео «выбрал PDF → книга на полке».
 
 ### 3. OAuth Client ID
 

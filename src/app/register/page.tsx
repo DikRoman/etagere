@@ -99,6 +99,12 @@ export default function RegisterPage() {
           />
         </label>
         {displayError && <p className="auth-error">{displayError}</p>}
+        <p className="auth-legal">
+          {locale === "ru" ? "Регистрируясь, вы принимаете " : "By signing up you accept the "}
+          <Link href="/terms">{t("terms", locale)}</Link>
+          {locale === "ru" ? " и " : " and "}
+          <Link href="/privacy">{t("privacy", locale)}</Link>.
+        </p>
         <button type="submit" className="btn-primary" disabled={busy}>
           {t("register", locale)}
         </button>

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { useSettingsStore } from "@/store/settings";
 import { useReaderStore } from "@/store/reader";
@@ -130,6 +131,9 @@ function LookupCardView({
       lemma: data.lemma,
       translations,
       context: data.sentence?.original,
+      ipa: data.ipa,
+      pos: data.pos,
+      sourceLang: data.sourceLang,
       bookId: bookId ?? undefined,
       page,
     });
@@ -319,6 +323,11 @@ function LookupCardView({
         >
           {saved ? `✓ ${t("vocabAdded", locale)}` : `+ ${t("addToVocab", locale)}`}
         </button>
+        {saved ? (
+          <Link href="/vocab" className="lookup-add">
+            {t("openVocab", locale)}
+          </Link>
+        ) : null}
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Alegreya, Fraunces, Manrope } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
@@ -29,6 +29,24 @@ export const metadata: Metadata = {
   title: "Étagère · Этажер",
   description:
     "Читалка PDF/EPUB с полкой, заметками и синхронизацией — Étagère / Этажер",
+  appleWebApp: {
+    capable: true,
+    title: "Étagère",
+    statusBarStyle: "default",
+  },
+  formatDetection: {
+    telephone: false,
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#e8ecf1" },
+    { media: "(prefers-color-scheme: dark)", color: "#12161c" },
+  ],
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

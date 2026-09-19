@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { getBook, hasLocalBookFile, saveBook } from "@/lib/storage/local";
+import Link from "next/link";
+import { getBook, hasLocalBookFile, saveBook, touchBookOpened } from "@/lib/storage/local";
 import { ensureLocalBookFile } from "@/lib/sync/book-file";
 import type { BookMeta } from "@/lib/types";
 import { useReaderStore } from "@/store/reader";
@@ -31,6 +32,13 @@ export default function ReaderPage() {
   const bookId = params.bookId;
   const locale = useSettingsStore((s) => s.locale);
   const theme = useSettingsStore((s) => s.theme);
+  const chromeOpen = useReaderStore((s) => s.chromeOpen);
+  const toggleChrome = useReaderStore((s) => s.toggleChrome);
+  const tool = useReaderStore((s) => s.tool);
+  const goToPage = useReaderStore((s) => s.goToPage);
+  const page = useReaderStore((s) => s.page);
+  const liveCount = useReaderStore((s) => s.pageCount);
+  const spread = useSettingsStore((s) => s.spread);
   const setBook = useReaderStore((s) => s.setBook);
   const addBookFile = useLibraryStore((s) => s.addBookFile);
   const importFromDriveLink = useLibraryStore((s) => s.importFromDriveLink);
@@ -40,6 +48,36 @@ export default function ReaderPage() {
   const [restoreError, setRestoreError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   useReaderWheelZoom();
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target;
+      if (
+        target instanceof HTMLElement &&
+        target.closest("input, textarea, [contenteditable=true]")
+      ) {
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "Escape") {
+        toggleChrome();
+        return;
+      }
+      if (book?.format === "epub") return;
+      if (tool !== "select") return;
+      const count = liveCount || book?.pageCount || 1;
+      const step = spread ? 2 : 1;
+      if (e.key === "ArrowRight" || e.key === "PageDown") {
+        e.preventDefault();
+        void goToPage(Math.min(count, page + step));
+      } else if (e.key === "ArrowLeft" || e.key === "PageUp") {
+        e.preventDefault();
+        void goToPage(Math.max(1, page - step));
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [book, tool, liveCount, spread, page, goToPage, toggleChrome]);
 
   useEffect(() => {
     let cancelled = false;
@@ -62,6 +100,7 @@ export default function ReaderPage() {
           setBookMeta(meta);
         }
         await setBook(meta.id, meta.lastPage || 1, meta.pageCount);
+        void touchBookOpened(meta.id);
         return;
       }
 
@@ -75,6 +114,7 @@ export default function ReaderPage() {
         setBookMeta(fresh ?? { ...meta, missingLocalFile: false });
         void useLibraryStore.getState().hydrate();
         await setBook(meta.id, meta.lastPage || 1, meta.pageCount);
+        void touchBookOpened(meta.id);
         return;
       }
 
@@ -217,7 +257,7 @@ export default function ReaderPage() {
               {t("missingFileDrive", locale)}
             </button>
           )}
-          <a href="/">{locale === "ru" ? "На полку" : "Back"}</a>
+          <Link href="/">{locale === "ru" ? "На полку" : "Back"}</Link>
         </div>
         {restoreError && <p className="drive-hint">{restoreError}</p>}
       </div>
@@ -233,7 +273,9 @@ export default function ReaderPage() {
   }
 
   return (
-    <div className={`reader-shell theme-${theme}`}>
+    <div
+      className={`reader-shell theme-${theme}${chromeOpen ? "" : " chrome-off"}`}
+    >
       <ReaderToolbar
         title={book.title}
         pageCount={book.pageCount}

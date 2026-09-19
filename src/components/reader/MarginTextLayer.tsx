@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useReaderStore } from "@/store/reader";
+import { MARGIN_GUTTER_PX } from "@/lib/ink-space";
 import {
   EPUB_FONT_STACKS,
   type EpubFontChoice,
@@ -118,7 +119,10 @@ export function MarginTextLayer({
   return (
     <div
       className={`margin-texts ${placing ? "is-placing" : ""}`}
-      style={{ left: pageWidth, width }}
+      style={{
+        left: pageWidth + (width >= 8 ? MARGIN_GUTTER_PX : 0),
+        width,
+      }}
       onPointerDown={placeAt}
     >
       {items.map((item) => (

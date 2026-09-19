@@ -6,6 +6,7 @@ import { renderPdfTextLayer } from "@/lib/pdf";
 import { useReaderStore } from "@/store/reader";
 import { useSettingsStore } from "@/store/settings";
 import { HIGHLIGHT_COLORS, QUOTE_MARKER, NOTE_MARKER } from "@/lib/types";
+import { MARGIN_GUTTER_PX } from "@/lib/ink-space";
 import { InkLayer } from "./InkLayer";
 import { MarginTextLayer } from "./MarginTextLayer";
 import { PdfLinkLayer } from "./PdfLinkLayer";
@@ -121,7 +122,8 @@ export function PdfPage({
   const pageNotes = annotations.notes.filter((n) => n.page === pageNumber);
   const pageInk = annotations.ink.filter((s) => s.page === pageNumber);
   const pageTexts = (annotations.texts ?? []).filter((s) => s.page === pageNumber);
-  const totalW = size.w + size.margin;
+  const gutter = size.margin >= 8 ? MARGIN_GUTTER_PX : 0;
+  const totalW = size.w + gutter + size.margin;
 
   return (
     <article
