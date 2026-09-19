@@ -22,6 +22,7 @@
 | [14-gigachat.md](./14-gigachat.md) | GigaChat: перевод и чат |
 | [15-tts.md](./15-tts.md) | Озвучка: Piper и ElevenLabs |
 | [16-yookassa.md](./16-yookassa.md) | ЮKassa: Pro 100 ₽/мес |
+| [17-sync-contract.md](./17-sync-contract.md) | Контракт синхронизации веб ↔ iPad |
 
 ## Production
 
