@@ -4206,15 +4206,6 @@ html[data-theme="night"] .page-margin.is-sheet {
   opacity: 1;
 }
 
-.spread-grid {
-  display: grid !important;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-  align-items: start;
-  max-width: 1400px;
-  margin: 0 auto;
-}
-
 .book-search {
   position: relative;
   display: block;
@@ -6374,24 +6365,6 @@ html[data-theme="night"] .feat-card {
   display: grid;
   gap: 0.7rem;
   width: min(22rem, calc(100vw - 1.5rem));
-}
-
-.reader-shell.chrome-off .reader-chrome-top {
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(-12px);
-}
-
-.reader-shell.chrome-off .reader-chrome-bottom {
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(12px);
-}
-
-.reader-shell.chrome-off .reader-sidebar-tab,
-.reader-shell.chrome-off .page-filmstrip-tab {
-  opacity: 0;
-  pointer-events: none;
 }
 
 @media (min-width: 1100px) {

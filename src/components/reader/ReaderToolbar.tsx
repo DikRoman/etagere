@@ -268,13 +268,17 @@ export function ReaderToolbar({ title, pageCount, bookId, format }: Props) {
         >
           +
         </button>
-        <button
-          type="button"
-          className={`btn-ghost compact ${spread ? "is-on" : ""}`}
-          onClick={() => setSpread(!spread)}
-        >
-          {t("spread", locale)}
-        </button>
+        {/* PDF scrolls vertically in a single column, so a spread is
+            an EPUB-only option. */}
+        {format === "epub" && (
+          <button
+            type="button"
+            className={`btn-ghost compact ${spread ? "is-on" : ""}`}
+            onClick={() => setSpread(!spread)}
+          >
+            {t("spread", locale)}
+          </button>
+        )}
       </div>
       <div className="lang-switch theme-switch">
         {(["day", "paper", "night"] as const).map((th) => (

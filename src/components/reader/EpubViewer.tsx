@@ -309,7 +309,6 @@ export function EpubViewer({ bookId }: { bookId: string }) {
       });
       if (zone === "prev") turn(-1);
       else if (zone === "next") turn(1);
-      else useReaderStore.getState().toggleChrome();
     });
 
     applying.current = true;

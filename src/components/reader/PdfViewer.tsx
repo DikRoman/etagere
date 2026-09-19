@@ -10,7 +10,6 @@ import { useReaderStore } from "@/store/reader";
 import { useSettingsStore } from "@/store/settings";
 import { PdfPage } from "./PdfPage";
 import { PageFilmstrip } from "./PageFilmstrip";
-import { isPlainReaderTap, readerTapZone } from "@/lib/reader-chrome";
 
 interface Props {
   bookId: string;
@@ -37,9 +36,6 @@ export function PdfViewer({ bookId, pageCount }: Props) {
   const setPdfDoc = useReaderStore((s) => s.setPdfDoc);
   const page = useReaderStore((s) => s.page);
   const tool = useReaderStore((s) => s.tool);
-  const goToPage = useReaderStore((s) => s.goToPage);
-  const toggleChrome = useReaderStore((s) => s.toggleChrome);
-  const spread = useSettingsStore((s) => s.spread);
   const filmstripOpen = useSettingsStore((s) => s.filmstripOpen);
   const setFilmstripOpen = useSettingsStore((s) => s.setFilmstripOpen);
   const locale = useSettingsStore((s) => s.locale);
@@ -49,7 +45,6 @@ export function PdfViewer({ bookId, pageCount }: Props) {
   const zoomAnchor = useRef<{ page: number; ratio: number } | null>(null);
   const zoomReady = useRef(false);
   const suppressPageFromScroll = useRef(false);
-  const pressAt = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -107,7 +102,7 @@ export function PdfViewer({ bookId, pageCount }: Props) {
     (async () => {
       const page = await pdf.getPage(1);
       if (cancelled) return;
-      const viewport = page.getViewport({ scale: spread ? scale * 0.85 : scale });
+      const viewport = page.getViewport({ scale });
       setEstimate({
         w: viewport.width,
         h: viewport.height,
@@ -117,7 +112,7 @@ export function PdfViewer({ bookId, pageCount }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [pdf, scale, spread, marginRatio]);
+  }, [pdf, scale, marginRatio]);
 
   useLayoutEffect(() => {
     if (!zoomReady.current) {
@@ -144,7 +139,7 @@ export function PdfViewer({ bookId, pageCount }: Props) {
       suppressPageFromScroll.current = false;
     }, 400);
     return () => window.clearTimeout(t);
-  }, [scale, spread]);
+  }, [scale]);
 
   useEffect(() => {
     const root = scrollRef.current;
@@ -214,7 +209,6 @@ export function PdfViewer({ bookId, pageCount }: Props) {
   if (error) return <div className="reader-error">{error}</div>;
   if (!pdf || !estimate) return <div className="pdf-loading">PDF…</div>;
 
-  const renderScale = spread ? scale * 0.85 : scale;
 
   return (
     <div className="pdf-viewer-layout">
@@ -240,46 +234,16 @@ export function PdfViewer({ bookId, pageCount }: Props) {
       <div
         className={`pdf-scroll ${
           tool === "pen" || tool === "eraser" ? "tool-draw" : ""
-        } ${tool === "type" ? "tool-type" : ""} ${spread ? "is-spread" : ""}`}
+        } ${tool === "type" ? "tool-type" : ""}`}
         ref={scrollRef}
-        onPointerDown={(e) => {
-          if (e.button !== 0) return;
-          pressAt.current = { x: e.clientX, y: e.clientY };
-        }}
-        onClick={(e) => {
-          if (tool !== "select") return;
-          if (!isPlainReaderTap(pressAt.current, e.clientX, e.clientY)) return;
-          const sel = window.getSelection();
-          if (sel && !sel.isCollapsed) return;
-          const target = e.target as HTMLElement;
-          if (
-            target.closest(
-              "a, button, input, textarea, .page-bookmark-btn, .page-filmstrip",
-            )
-          ) {
-            return;
-          }
-          const root = scrollRef.current;
-          if (!root) return;
-          const box = root.getBoundingClientRect();
-          const zone = readerTapZone(e.clientX, {
-            left: box.left,
-            width: box.width,
-          });
-          const step = spread ? 2 : 1;
-          if (zone === "prev") void goToPage(Math.max(1, page - step));
-          else if (zone === "next")
-            void goToPage(Math.min(pageCount, page + step));
-          else toggleChrome();
-        }}
       >
-        <div className={`pdf-column ${spread ? "spread-grid" : ""}`}>
+        <div className="pdf-column">
           {pages.map((n) => (
             <PdfPage
               key={n}
               pdf={pdf}
               pageNumber={n}
-              scale={renderScale}
+              scale={scale}
               estimate={estimate}
               marginRatio={marginRatio}
             />

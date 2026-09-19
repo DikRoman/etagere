@@ -32,8 +32,6 @@ export default function ReaderPage() {
   const bookId = params.bookId;
   const locale = useSettingsStore((s) => s.locale);
   const theme = useSettingsStore((s) => s.theme);
-  const chromeOpen = useReaderStore((s) => s.chromeOpen);
-  const toggleChrome = useReaderStore((s) => s.toggleChrome);
   const tool = useReaderStore((s) => s.tool);
   const goToPage = useReaderStore((s) => s.goToPage);
   const page = useReaderStore((s) => s.page);
@@ -59,10 +57,6 @@ export default function ReaderPage() {
         return;
       }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.key === "Escape") {
-        toggleChrome();
-        return;
-      }
       if (book?.format === "epub") return;
       if (tool !== "select") return;
       const count = liveCount || book?.pageCount || 1;
@@ -77,7 +71,7 @@ export default function ReaderPage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [book, tool, liveCount, spread, page, goToPage, toggleChrome]);
+  }, [book, tool, liveCount, spread, page, goToPage]);
 
   useEffect(() => {
     let cancelled = false;
@@ -274,7 +268,7 @@ export default function ReaderPage() {
 
   return (
     <div
-      className={`reader-shell theme-${theme}${chromeOpen ? "" : " chrome-off"}`}
+      className={`reader-shell theme-${theme}`}
     >
       <ReaderToolbar
         title={book.title}
