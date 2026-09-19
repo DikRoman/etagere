@@ -187,18 +187,20 @@ export function indexPdfTextLayer(layer: HTMLElement): PdfTextIndex {
   }
   const lineOf = clusterLines(raw);
   const colOf = columnOfGlyphs(raw, width);
+  // Reading order comes from pdf.js: TextLayer renders one span per text item
+  // in content-stream order, so walking the DOM already yields the right
+  // sequence. Re-sorting by geometry used to guess columns from whitespace
+  // gaps, which shredded contents pages, bullet lists and tables into
+  // "all titles, then all dot leaders, then all page numbers".
+  //
+  // line/column are still computed, but only for geometry: word and line
+  // expansion, and merging highlight rectangles.
   const glyphs: PdfGlyph[] = raw.map((g, i) => ({
     ...g,
-    i: 0,
+    i,
     line: lineOf[i],
     column: colOf[i],
   }));
-  glyphs.sort(
-    (a, b) => a.column - b.column || a.line - b.line || a.x - b.x || a.y - b.y,
-  );
-  glyphs.forEach((g, i) => {
-    g.i = i;
-  });
   return { glyphs, pageText: joinPageText(glyphs), width, height };
 }
 
@@ -244,14 +246,12 @@ export function flowGlyphs(
   start: PdfGlyph,
   end: PdfGlyph,
 ): PdfGlyph[] {
+  // Indices now follow reading order, so the span between two hits is simply
+  // the range. The old column filter dropped glyphs whenever the guessed
+  // columns were wrong, which is what made a short drag select far too much.
   const lo = Math.min(start.i, end.i);
   const hi = Math.max(start.i, end.i);
-  if (start.column === end.column) {
-    return index.glyphs.filter(
-      (g) => g.column === start.column && g.i >= lo && g.i <= hi,
-    );
-  }
-  return index.glyphs.filter((g) => g.i >= lo && g.i <= hi);
+  return index.glyphs.slice(lo, hi + 1);
 }
 
 export function expandWord(index: PdfTextIndex, hit: PdfGlyph): PdfGlyph[] {
