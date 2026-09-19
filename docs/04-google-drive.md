@@ -26,7 +26,8 @@ https://drive.google.com/file/d/FILE_ID/view
 
 | Компонент | Файл |
 |-----------|------|
-| OAuth (GIS token) | `src/lib/storage/drive.ts` |
+| OAuth (authorization code + refresh) | `src/lib/cloud/oauth-server.ts`, `src/app/api/cloud/[provider]/*` |
+| Токены в браузере | `src/lib/cloud/session.ts` |
 | Google Picker | `src/lib/storage/drive.ts` |
 | UI | `src/components/ImportFromDriveButton.tsx` |
 | Store | `src/store/library.ts` → `importFromDrive`, `importFromDriveLink` |
@@ -35,7 +36,12 @@ https://drive.google.com/file/d/FILE_ID/view
 - кнопка **«Добавить с Google Drive»** — только `drive.file` (выбранные файлы) + Google Picker
 - вставка ссылки — публичный файл по API key или файл, уже выбранный через Picker. Закрытый чужой файл без «всем по ссылке» не откроется — так мы не просим доступ ко всему диску.
 
-Токен хранится в `localStorage` (`etagere-drive-token`).
+**Подключение живёт долго.** Drive работает по той же схеме, что Яндекс.Диск:
+пользователь один раз проходит согласие, refresh-токен ложится в httpOnly-куку
+на сервере, а access-токен выпускается из него по мере надобности
+(`/api/cloud/gdrive/refresh`). Раньше использовался браузерный GIS token client —
+он выдавал токен на час без возможности продления, поэтому Drive отваливался
+каждый час.
 
 ## Настройка Google Cloud (один раз)
 
@@ -69,7 +75,11 @@ https://etagere.ru
 http://localhost:3000
 ```
 
-Redirect URIs — не нужны (GIS token client).
+**Authorized redirect URIs** — обязательны:
+```
+https://etagere.ru/api/cloud/gdrive/callback
+http://localhost:3000/api/cloud/gdrive/callback
+```
 
 ### 4. API key (Browser)
 
@@ -89,9 +99,12 @@ https://docs.google.com/*
 
 ```env
 NEXT_PUBLIC_GOOGLE_CLIENT_ID=….apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=GOCSPX-….
 NEXT_PUBLIC_GOOGLE_API_KEY=AIza….
 NEXT_PUBLIC_GOOGLE_APP_ID=1069484265184
 ```
+
+`GOOGLE_CLIENT_SECRET` — только на сервере, без префикса `NEXT_PUBLIC_`.
 
 Пересборка обязательна:
 ```bash
@@ -111,7 +124,20 @@ npm run deploy:vps
 
 ## Client secret
 
-**Не используется** — не добавлять в `.env`. Если создали случайно — можно сбросить в Console.
+**Обязателен.** Без него сервер не может обменять код на refresh-токен, и
+подключение снова будет умирать через час. Лежит в `GOOGLE_CLIENT_SECRET`
+на сервере (`/etc/default/etagere-web`), в браузер не попадает.
+
+## Почему важен статус «In production»
+
+| Статус OAuth-приложения | Refresh-токен | Кто может подключиться |
+|---|---|---|
+| In production | не истекает по времени | любой пользователь |
+| Testing | протухает через 7 дней | только Test users (до 100) |
+
+В режиме Testing подключение будет рваться раз в неделю. Scope `drive.file`
+не относится к restricted, поэтому дорогой аудит безопасности не нужен —
+достаточно brand-проверки.
 
 ## Ограничения
 

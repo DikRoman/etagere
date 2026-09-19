@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { CloudProvider } from "@/lib/cloud/session";
 import {
+  asDiskProvider,
   REFRESH_COOKIE,
   refreshCookieName,
   refreshDiskToken,
@@ -8,18 +8,11 @@ import {
 
 export const runtime = "nodejs";
 
-function asDisk(
-  raw: string,
-): Exclude<CloudProvider, "gdrive"> | null {
-  if (raw === "yandex" || raw === "dropbox" || raw === "onedrive") return raw;
-  return null;
-}
-
 export async function POST(
   req: NextRequest,
   ctx: { params: Promise<{ provider: string }> },
 ) {
-  const provider = asDisk((await ctx.params).provider);
+  const provider = asDiskProvider((await ctx.params).provider);
   if (!provider) {
     return NextResponse.json({ error: "NO_SESSION" }, { status: 400 });
   }

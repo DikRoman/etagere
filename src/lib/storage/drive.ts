@@ -1,19 +1,20 @@
 /**
  * Google Drive import — pick PDF/EPUB from user's Drive and open in the reader.
- * Uses GIS token + Google Picker (drive.file scope).
+ * Google Picker with the drive.file scope.
+ *
+ * Authorization lives in @/lib/cloud/session like every other disk: the server
+ * holds a refresh token and mints access tokens on demand. The old browser-only
+ * GIS token client is gone — it issued a one-hour token with nothing to renew
+ * it, so the connection died every hour.
  */
 
-const TOKEN_KEY = "etagere-drive-token";
-const SCOPE_KEY = "etagere-drive-scope";
-const SESSION_KEY = "etagere-drive-session";
-const SCOPE_FILE = "https://www.googleapis.com/auth/drive.file";
-const TOKEN_SKEW_MS = 60_000;
+import {
+  disconnectProvider,
+  ensureAccessToken,
+  getAccessToken,
+  isProviderConnected,
+} from "@/lib/cloud/session";
 
-type DriveSession = {
-  accessToken?: string;
-  expiresAt?: number;
-  granted?: boolean;
-};
 const BOOK_MIMES = "application/pdf,application/epub+zip";
 const GOOGLE_EXPORT_PDF = "application/vnd.google-apps.document";
 
@@ -34,19 +35,6 @@ declare global {
       load: (name: string, callback: () => void) => void;
     };
     google?: {
-      accounts: {
-        oauth2: {
-          initTokenClient: (cfg: {
-            client_id: string;
-            scope: string;
-            callback: (resp: {
-              access_token?: string;
-              expires_in?: number;
-              error?: string;
-            }) => void;
-          }) => { requestAccessToken: (opts?: { prompt?: string }) => void };
-        };
-      };
       picker?: {
         PickerBuilder: new () => PickerBuilderInstance;
         DocsView: new (viewId: string) => DocsViewInstance;
@@ -105,51 +93,16 @@ export function isDriveConfigured(): boolean {
   return Boolean(clientId());
 }
 
-function readDriveSession(): DriveSession | null {
-  if (typeof window === "undefined") return null;
-  const raw = localStorage.getItem(SESSION_KEY);
-  if (raw) {
-    try {
-      return JSON.parse(raw) as DriveSession;
-    } catch {
-      /* fall through */
-    }
-  }
-  const token = localStorage.getItem(TOKEN_KEY);
-  if (!token) return null;
-  return { accessToken: token, granted: true };
-}
-
-function writeDriveSession(row: DriveSession): void {
-  localStorage.setItem(SESSION_KEY, JSON.stringify(row));
-  if (row.accessToken) localStorage.setItem(TOKEN_KEY, row.accessToken);
-}
-
 export function isDriveConnected(): boolean {
-  const row = readDriveSession();
-  return Boolean(row?.granted || row?.accessToken);
+  return isProviderConnected("gdrive");
 }
 
 function getToken(): string | null {
-  const row = readDriveSession();
-  if (!row?.accessToken) return null;
-  if (!row.expiresAt || Date.now() > row.expiresAt - TOKEN_SKEW_MS) return null;
-  return row.accessToken;
-}
-
-function setToken(token: string, scope = SCOPE_FILE, expiresInSec = 3600) {
-  writeDriveSession({
-    accessToken: token,
-    expiresAt: Date.now() + expiresInSec * 1000,
-    granted: true,
-  });
-  localStorage.setItem(SCOPE_KEY, scope);
+  return getAccessToken("gdrive");
 }
 
 export function disconnectDrive(): void {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(SCOPE_KEY);
-  localStorage.removeItem(SESSION_KEY);
+  disconnectProvider("gdrive");
 }
 
 function linkAccessError(): string {
@@ -167,21 +120,6 @@ export function parseDriveFileId(urlOrId: string): string | null {
   if (fromQuery?.[1]) return fromQuery[1];
   if (/^[a-zA-Z0-9_-]{10,}$/.test(s)) return s;
   return null;
-}
-
-function loadGis(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (window.google?.accounts?.oauth2) {
-      resolve();
-      return;
-    }
-    const s = document.createElement("script");
-    s.src = "https://accounts.google.com/gsi/client";
-    s.async = true;
-    s.onload = () => resolve();
-    s.onerror = () => reject(new Error("Failed to load Google Identity Services"));
-    document.head.appendChild(s);
-  });
 }
 
 function loadPickerApi(): Promise<void> {
@@ -293,95 +231,30 @@ function ensureExtension(name: string, mimeType: string): string {
   return `${name}.pdf`;
 }
 
-export async function connectDrive(opts?: {
-  forceConsent?: boolean;
-  scope?: string;
-  /** GIS always opens an account window. Only true after a user click. */
-  interactive?: boolean;
-}): Promise<DriveConnectResult> {
-  const id = clientId();
-  if (!id) {
+/**
+ * Sends the browser to the shared OAuth start route. This navigates away and
+ * comes back through /cloud/complete, so it never resolves in place.
+ */
+export async function connectDrive(): Promise<DriveConnectResult> {
+  if (!clientId()) {
     return {
       ok: false,
       message: "Google Drive не настроен на сервере (нет Client ID).",
     };
   }
-
-  if (opts?.interactive === false) {
-    return { ok: false, message: "Drive token expired" };
-  }
-
-  const scope = opts?.scope || SCOPE_FILE;
-
-  try {
-    await loadGis();
-    await new Promise<string>((resolve, reject) => {
-      const client = window.google!.accounts.oauth2.initTokenClient({
-        client_id: id,
-        scope,
-        callback: (resp) => {
-          if (resp.error || !resp.access_token) {
-            reject(new Error(resp.error || "No token"));
-            return;
-          }
-          setToken(resp.access_token, scope, resp.expires_in || 3600);
-          resolve(resp.access_token);
-        },
-      });
-      const granted = isDriveConnected();
-      const prompt =
-        opts?.forceConsent ? "consent" : granted ? "" : "consent";
-      client.requestAccessToken({ prompt });
-    });
-    return {
-      ok: true,
-      message: "Google Drive подключён.",
-    };
-  } catch (e) {
-    console.error(e);
-    return {
-      ok: false,
-      message:
-        e instanceof Error
-          ? e.message
-          : "Не удалось подключить Google Drive.",
-    };
-  }
+  window.location.assign("/api/cloud/gdrive/start");
+  return { ok: true, message: "Google Drive подключается…" };
 }
 
-let driveTokenInFlight: Promise<string> | null = null;
-
-export async function ensureDriveToken(opts?: {
-  force?: boolean;
-  interactive?: boolean;
-}): Promise<string> {
-  const force = Boolean(opts?.force);
-  const interactive = opts?.interactive === true;
-  if (!force) {
-    const live = getToken();
-    if (live) return live;
-    if (!interactive) throw new Error("Drive token expired");
-    if (driveTokenInFlight) return driveTokenInFlight;
-  } else if (!interactive) {
-    throw new Error("Drive token expired");
-  }
-  const pending = (async () => {
-    const result = await connectDrive({
-      forceConsent: force,
-      scope: SCOPE_FILE,
-      interactive: true,
-    });
-    if (!result.ok) throw new Error(result.message);
-    const token = getToken();
-    if (!token) throw new Error("No Drive token");
-    return token;
-  })();
-  if (!force) driveTokenInFlight = pending;
-  try {
-    return await pending;
-  } finally {
-    if (driveTokenInFlight === pending) driveTokenInFlight = null;
-  }
+/**
+ * A live access token for Drive, renewed from the server-held refresh token.
+ * Never opens a Google window: if the refresh fails the user is disconnected
+ * and has to reconnect deliberately.
+ */
+export async function ensureDriveToken(): Promise<string> {
+  const token = await ensureAccessToken("gdrive");
+  if (!token) throw new Error("DRIVE_DISCONNECTED");
+  return token;
 }
 
 async function validateDriveToken(token: string): Promise<boolean> {
@@ -395,12 +268,10 @@ async function validateDriveToken(token: string): Promise<boolean> {
   }
 }
 
-/** Check the current Drive token. Never opens a Google sign-in window. */
+/** Renew the Drive access token ahead of expiry. Never opens a Google window. */
 export async function keepDriveAlive(): Promise<void> {
   if (!isDriveConnected()) return;
-  const live = getToken();
-  if (!live) return;
-  await validateDriveToken(live);
+  await ensureAccessToken("gdrive");
 }
 
 export async function pickDriveBooks(): Promise<DrivePickedFile[] | null> {
@@ -415,9 +286,19 @@ export async function pickDriveBooks(): Promise<DrivePickedFile[] | null> {
     );
   }
 
-  let token = await ensureDriveToken({ interactive: true });
+  // Not connected, or the refresh token was revoked: send the user through
+  // consent instead of failing with an opaque error. connectDrive() navigates
+  // away, so nothing after it runs.
+  let token: string;
+  try {
+    token = await ensureDriveToken();
+  } catch {
+    await connectDrive();
+    return null;
+  }
   if (!(await validateDriveToken(token))) {
-    token = await ensureDriveToken({ force: true, interactive: true });
+    await connectDrive();
+    return null;
   }
 
   await loadPickerApi();
@@ -585,39 +466,28 @@ async function driveDownloadViaProxy(
 
 export async function downloadDriveFile(
   fileId: string,
-  opts?: { interactive?: boolean },
 ): Promise<{ blob: Blob; name: string; mimeType: string }> {
-  const interactive = opts?.interactive !== false;
+  // Renewal is silent now, so this is safe to call from background sync.
   let token: string | null = null;
   try {
-    token = await ensureDriveToken({ interactive });
+    token = await ensureDriveToken();
   } catch {
-    token = getToken();
+    token = null;
   }
 
   if (token) {
-    const first = await driveDownloadViaProxy(fileId, token);
-    if (first && first !== "unauthorized") return first;
-    if (first === "unauthorized" && interactive) {
-      try {
-        token = await ensureDriveToken({ force: true, interactive: true });
-        const retry = await driveDownloadViaProxy(fileId, token);
-        if (retry && retry !== "unauthorized") return retry;
-      } catch {
-        /* fall through */
-      }
-    }
+    const viaProxy = await driveDownloadViaProxy(fileId, token);
+    if (viaProxy && viaProxy !== "unauthorized") return viaProxy;
   }
 
-  if (interactive) {
-    const key = apiKey();
-    if (key) {
-      try {
-        const viaKey = await driveDownload(fileId, { key });
-        if (viaKey) return viaKey;
-      } catch {
-        /* private files 403 via key */
-      }
+  // Public "anyone with the link" files still work without a connection.
+  const key = apiKey();
+  if (key) {
+    try {
+      const viaKey = await driveDownload(fileId, { key });
+      if (viaKey) return viaKey;
+    } catch {
+      /* private files 403 via key */
     }
   }
 

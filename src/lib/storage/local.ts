@@ -293,18 +293,29 @@ export async function hasLocalBookFile(bookId: string): Promise<boolean> {
   }
 }
 
-/** Drop the PDF/EPUB from this browser after 5 days without opening. */
-export const BOOK_FILE_TTL_MS = 5 * 24 * 60 * 60 * 1000;
-
 export function hasCloudBookCopy(book: BookMeta): boolean {
   return Boolean(book.hasCloudFile || book.driveFileId || book.cloudFileId);
 }
 
-export function isBookFileWarm(book: BookMeta, at = new Date()): boolean {
-  if (!book.openedAt) return false;
-  const opened = Date.parse(book.openedAt);
-  if (!Number.isFinite(opened)) return false;
-  return at.getTime() - opened <= BOOK_FILE_TTL_MS;
+/**
+ * Local files are evicted only under real storage pressure, never on a timer.
+ * A timer-based TTL used to delete books after five days, which looked like
+ * the library losing them at random.
+ */
+const EVICT_START_RATIO = 0.85;
+const EVICT_TARGET_RATIO = 0.7;
+
+async function storageUsage(): Promise<{ usage: number; quota: number } | null> {
+  if (typeof navigator === "undefined") return null;
+  const estimate = navigator.storage?.estimate;
+  if (!estimate) return null;
+  try {
+    const { usage, quota } = await navigator.storage.estimate();
+    if (!usage || !quota) return null;
+    return { usage, quota };
+  } catch {
+    return null;
+  }
 }
 
 export async function deleteLocalBookFile(book: BookMeta): Promise<void> {
@@ -335,12 +346,17 @@ export async function touchBookOpened(
   await saveBook({ ...book, openedAt: iso });
 }
 
-/** Remove stale local files that can be downloaded again from the user's disk. */
+/**
+ * Keep the missing-file flags honest, and free space only when the browser is
+ * actually close to its quota — least recently opened first, and only for
+ * books that still have a copy on a connected disk.
+ */
 export async function evictStaleBookFiles(at = new Date()): Promise<number> {
   const db = await openDb();
   if (!hasStore(db, BOOKS_STORE)) return 0;
   const books = (await idbGetAll<BookMeta>(db, BOOKS_STORE)).map(normalizeBook);
-  let n = 0;
+
+  const onDisk: BookMeta[] = [];
   for (const book of books) {
     const hasFile = await hasLocalBookFile(book.id);
     if (!hasFile) {
@@ -349,14 +365,33 @@ export async function evictStaleBookFiles(at = new Date()): Promise<number> {
       }
       continue;
     }
-    if (!hasCloudBookCopy(book)) continue;
-    if (!book.openedAt) {
-      await saveBook({ ...book, openedAt: at.toISOString() });
-      continue;
+    let current = book;
+    if (book.missingLocalFile) {
+      current = { ...current, missingLocalFile: false };
+      await saveBook(current);
     }
-    if (isBookFileWarm(book, at)) continue;
+    if (!current.openedAt) {
+      current = { ...current, openedAt: at.toISOString() };
+      await saveBook(current);
+    }
+    if (hasCloudBookCopy(current)) onDisk.push(current);
+  }
+
+  const storage = await storageUsage();
+  if (!storage) return 0;
+  if (storage.usage <= storage.quota * EVICT_START_RATIO) return 0;
+
+  const target = storage.quota * EVICT_TARGET_RATIO;
+  const oldestFirst = [...onDisk].sort(
+    (a, b) => Date.parse(a.openedAt ?? "") - Date.parse(b.openedAt ?? ""),
+  );
+  let freed = 0;
+  let n = 0;
+  for (const book of oldestFirst) {
+    if (storage.usage - freed <= target) break;
     await deleteLocalBookFile(book);
     await saveBook({ ...book, missingLocalFile: true });
+    freed += book.sizeBytes || 0;
     n += 1;
   }
   return n;

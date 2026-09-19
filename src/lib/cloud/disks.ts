@@ -230,9 +230,7 @@ export async function downloadFromCloudDisks(
   for (const tryOne of tries) {
     try {
       if (tryOne.provider === "gdrive") {
-        const { blob } = await downloadDriveFile(tryOne.fileId, {
-          interactive: false,
-        });
+        const { blob } = await downloadDriveFile(tryOne.fileId);
         if (blob.size > 0)
           return { blob, provider: "gdrive", fileId: tryOne.fileId };
         continue;

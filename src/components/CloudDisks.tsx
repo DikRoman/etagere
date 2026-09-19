@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLibraryStore } from "@/store/library";
 import { useSettingsStore } from "@/store/settings";
 import { t } from "@/lib/i18n";
-import { connectDrive, isDriveConfigured } from "@/lib/storage/drive";
+import { isDriveConfigured } from "@/lib/storage/drive";
 import {
   CLOUD_PROVIDERS,
   disconnectProvider,
@@ -60,14 +60,8 @@ export function CloudDisks() {
     setStatus(null);
     setBusy(provider);
     try {
-      if (provider === "gdrive") {
-        const result = await connectDrive();
-        refreshDriveFlag();
-        setStatus(result.message);
-      } else {
-        window.location.assign(`/api/cloud/${provider}/start`);
-        return;
-      }
+      window.location.assign(`/api/cloud/${provider}/start`);
+      return;
     } catch (e) {
       setStatus(e instanceof Error ? e.message : "Error");
     } finally {

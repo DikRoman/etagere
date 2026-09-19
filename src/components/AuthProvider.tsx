@@ -4,7 +4,10 @@ import { useEffect } from "react";
 import { useAuthStore } from "@/store/auth";
 import { useLibraryStore } from "@/store/library";
 import { runFullSync } from "@/lib/sync/library-sync";
-import { refreshCloudSessions } from "@/lib/cloud/session";
+import {
+  clearLegacyDriveSession,
+  refreshCloudSessions,
+} from "@/lib/cloud/session";
 import { keepDriveAlive } from "@/lib/storage/drive";
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -15,6 +18,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const libraryHydrate = useLibraryStore((s) => s.hydrate);
 
   useEffect(() => {
+    // The old Google Drive token cannot be renewed. Drop it once so the UI
+    // shows Drive as disconnected instead of silently failing every request.
+    clearLegacyDriveSession();
     void hydrate();
   }, [hydrate]);
 

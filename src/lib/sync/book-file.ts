@@ -72,6 +72,9 @@ async function pool<T>(
   );
 }
 
+/** Files pulled back per sync; the rest restore lazily when opened. */
+const RESTORE_BATCH = 25;
+
 export type FileRestoreProgress = {
   done: number;
   total: number;
@@ -86,9 +89,14 @@ export async function restoreMissingBookFiles(
   for (const book of books) {
     if (await local.hasLocalBookFile(book.id)) continue;
     if (!local.hasCloudBookCopy(book)) continue;
-    if (!local.isBookFileWarm(book)) continue;
     missing.push(book);
   }
+  // Most recently opened first, so a big library restores what matters now.
+  // The rest come back on open, which no longer needs a fresh sign-in.
+  missing.sort(
+    (a, b) => Date.parse(b.openedAt ?? "") - Date.parse(a.openedAt ?? ""),
+  );
+  missing.splice(RESTORE_BATCH);
   const total = missing.length;
   onProgress?.({ done: 0, total });
   if (!total) return 0;

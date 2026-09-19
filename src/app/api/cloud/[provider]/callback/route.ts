@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { CloudProvider } from "@/lib/cloud/session";
 import {
-  exchangeDropboxCode,
-  exchangeOnedriveCode,
-  exchangeYandexDiskCode,
+  asDiskProvider,
+  exchangeDiskCode,
   REFRESH_COOKIE,
   refreshCookieName,
 } from "@/lib/cloud/oauth-server";
@@ -19,18 +17,11 @@ const SESSION = {
   maxAge: 120,
 };
 
-function asDisk(
-  raw: string,
-): Exclude<CloudProvider, "gdrive"> | null {
-  if (raw === "yandex" || raw === "dropbox" || raw === "onedrive") return raw;
-  return null;
-}
-
 export async function GET(
   req: NextRequest,
   ctx: { params: Promise<{ provider: string }> },
 ) {
-  const provider = asDisk((await ctx.params).provider);
+  const provider = asDiskProvider((await ctx.params).provider);
   const clearState = (res: NextResponse) => {
     if (provider) {
       res.cookies.set(`cloud_${provider}_state`, "", { path: "/", maxAge: 0 });
@@ -51,12 +42,7 @@ export async function GET(
   }
 
   try {
-    const tokens =
-      provider === "yandex"
-        ? await exchangeYandexDiskCode(code)
-        : provider === "dropbox"
-          ? await exchangeDropboxCode(code)
-          : await exchangeOnedriveCode(code);
+    const tokens = await exchangeDiskCode(provider, code);
     const res = clearState(
       NextResponse.redirect(`${appOrigin()}/cloud/complete?p=${provider}`),
     );

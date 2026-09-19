@@ -17,6 +17,7 @@ export default function CloudCompletePage() {
         "p",
       ) as CloudProvider | null;
       if (
+        provider !== "gdrive" &&
         provider !== "yandex" &&
         provider !== "dropbox" &&
         provider !== "onedrive"

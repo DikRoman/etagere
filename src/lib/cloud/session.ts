@@ -1,5 +1,5 @@
 export type CloudProvider = "gdrive" | "yandex" | "dropbox" | "onedrive";
-export type DiskProvider = Exclude<CloudProvider, "gdrive">;
+export type DiskProvider = CloudProvider;
 
 export const CLOUD_PROVIDERS: CloudProvider[] = [
   "gdrive",
@@ -8,7 +8,30 @@ export const CLOUD_PROVIDERS: CloudProvider[] = [
   "onedrive",
 ];
 
-const DISK_PROVIDERS: DiskProvider[] = ["yandex", "dropbox", "onedrive"];
+const DISK_PROVIDERS: DiskProvider[] = [
+  "gdrive",
+  "yandex",
+  "dropbox",
+  "onedrive",
+];
+
+/** Keys written by the old browser-only Google flow, which had no refresh token. */
+const LEGACY_DRIVE_KEYS = [
+  "etagere-drive-token",
+  "etagere-drive-scope",
+  "etagere-drive-session",
+];
+
+/**
+ * The pre-refresh Google session cannot be renewed, so it is cleared once and
+ * the user reconnects. Leaving it in place is what made the UI claim Drive was
+ * connected while every request failed.
+ */
+export function clearLegacyDriveSession(): void {
+  if (typeof window === "undefined") return;
+  for (const key of LEGACY_DRIVE_KEYS) localStorage.removeItem(key);
+}
+
 const SKEW_MS = 60_000;
 
 type StoredDiskSession = {
@@ -66,9 +89,6 @@ function liveAccessToken(row: StoredDiskSession | null): string | null {
 
 export function getAccessToken(provider: CloudProvider): string | null {
   if (typeof window === "undefined") return null;
-  if (provider === "gdrive") {
-    return localStorage.getItem("etagere-drive-token");
-  }
   return liveAccessToken(readDiskSession(provider));
 }
 
@@ -78,10 +98,6 @@ export function setAccessToken(
   expiresInSec?: number,
   opts?: { hasRefresh?: boolean },
 ): void {
-  if (provider === "gdrive") {
-    localStorage.setItem("etagere-drive-token", token);
-    return;
-  }
   const prev = readDiskSession(provider);
   writeDiskSession(provider, {
     accessToken: token,
@@ -96,12 +112,7 @@ export function markDiskRefreshable(provider: DiskProvider): void {
 }
 
 export function disconnectProvider(provider: CloudProvider): void {
-  if (provider === "gdrive") {
-    localStorage.removeItem("etagere-drive-token");
-    localStorage.removeItem("etagere-drive-scope");
-    localStorage.removeItem("etagere-drive-session");
-    return;
-  }
+  if (provider === "gdrive") clearLegacyDriveSession();
   localStorage.removeItem(storageKey(provider));
   void fetch(`/api/cloud/${provider}/session`, {
     method: "DELETE",
@@ -111,15 +122,11 @@ export function disconnectProvider(provider: CloudProvider): void {
 
 export function isProviderConnected(provider: CloudProvider): boolean {
   if (typeof window === "undefined") return false;
-  if (provider === "gdrive") {
-    return Boolean(
-      localStorage.getItem("etagere-drive-token") ||
-        localStorage.getItem("etagere-drive-session"),
-    );
-  }
   const row = readDiskSession(provider);
   if (!row) return false;
-  return Boolean(row.hasRefresh || row.accessToken);
+  // A stored access token alone is not a connection: it dies within the hour.
+  // Only a refresh token means "connected" in the sense the UI promises.
+  return Boolean(row.hasRefresh || liveAccessToken(row));
 }
 
 export function connectedProviders(): CloudProvider[] {
@@ -129,7 +136,6 @@ export function connectedProviders(): CloudProvider[] {
 export async function ensureAccessToken(
   provider: CloudProvider,
 ): Promise<string | null> {
-  if (provider === "gdrive") return getAccessToken("gdrive");
   const live = getAccessToken(provider);
   if (live) return live;
   if (!isProviderConnected(provider)) return null;
@@ -152,9 +158,9 @@ async function refreshDiskAccess(provider: DiskProvider): Promise<string | null>
       credentials: "same-origin",
     });
     if (res.status === 401 || res.status === 404) {
-      if (row && !row.hasRefresh) {
-        localStorage.removeItem(storageKey(provider));
-      }
+      // The refresh token is gone or rejected. Drop the session so the UI
+      // stops claiming a connection the user no longer has.
+      localStorage.removeItem(storageKey(provider));
       return null;
     }
     if (!res.ok) return liveAccessToken(row);
