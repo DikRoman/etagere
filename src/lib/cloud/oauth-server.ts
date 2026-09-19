@@ -60,7 +60,9 @@ export function googleDriveAuthUrl(state: string): string {
     // back with an access token and nothing to renew it with.
     access_type: "offline",
     prompt: "consent",
-    include_granted_scopes: "true",
+    // Deliberately no include_granted_scopes: it would drag every scope this
+    // user ever granted the client onto the consent screen. We want the
+    // prompt to show exactly one permission.
     state,
   });
   return `https://accounts.google.com/o/oauth2/v2/auth?${q}`;
