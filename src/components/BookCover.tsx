@@ -81,6 +81,7 @@ export function BookCover({ book, index, part = "cover" }: BookCoverProps) {
   const libraryFilter = useLibraryStore((s) => s.libraryFilter);
   const toggleBookCollection = useLibraryStore((s) => s.toggleBookCollection);
   const setReadingStatus = useLibraryStore((s) => s.setReadingStatus);
+  const downloadBookFromCloud = useLibraryStore((s) => s.downloadBookFromCloud);
   const draggingBookId = useLibraryStore((s) => s.draggingBookId);
   const selectMode = useLibraryStore((s) => s.selectMode);
   const selected = useLibraryStore((s) => s.selectedBookIds.includes(book.id));
@@ -94,6 +95,7 @@ export function BookCover({ book, index, part = "cover" }: BookCoverProps) {
     null,
   );
   const [pressing, setPressing] = useState(false);
+  const [cloudBusy, setCloudBusy] = useState(false);
   const draggedRef = useRef(false);
   const enteredSelectRef = useRef(false);
   const longTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -385,6 +387,38 @@ export function BookCover({ book, index, part = "cover" }: BookCoverProps) {
             ? t("unmarkFinished", locale)
             : t("markFinished", locale)}
         </button>
+        {book.missingLocalFile &&
+          (book.hasCloudFile || book.driveFileId || book.cloudFileId) && (
+            <>
+              <div className="book-menu-sep" />
+              <button
+                type="button"
+                role="menuitem"
+                disabled={cloudBusy}
+                onClick={() => {
+                  setCloudBusy(true);
+                  void (async () => {
+                    try {
+                      const ok = await downloadBookFromCloud(book.id);
+                      if (ok) setMenuOpen(false);
+                      else alert(t("downloadFromCloudFailed", locale));
+                    } catch {
+                      alert(t("downloadFromCloudFailed", locale));
+                    } finally {
+                      setCloudBusy(false);
+                    }
+                  })();
+                }}
+              >
+                <span className="book-menu-ico" aria-hidden>
+                  ↓
+                </span>
+                {cloudBusy
+                  ? t("downloadingFromCloud", locale)
+                  : t("downloadFromCloud", locale)}
+              </button>
+            </>
+          )}
         <div className="book-menu-sep" />
         <button
           type="button"

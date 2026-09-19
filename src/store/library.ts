@@ -18,6 +18,7 @@ import {
 } from "../lib/epub";
 import { sha256Hex } from "../lib/content-hash";
 import type { CloudProvider } from "../lib/cloud/session";
+import { ensureLocalBookFile } from "../lib/sync/book-file";
 import {
   deleteCloudBook,
   scheduleSync,
@@ -133,6 +134,7 @@ interface LibraryStore {
   setDropTargetCollectionId: (id: string | null) => void;
   setReadingStatus: (bookId: string, status: ReadingStatus) => Promise<void>;
   restoreCover: (bookId: string) => Promise<void>;
+  downloadBookFromCloud: (bookId: string) => Promise<boolean>;
   connectDrive: () => Promise<string>;
   refreshDriveFlag: () => void;
 }
@@ -548,6 +550,19 @@ export const useLibraryStore = create<LibraryStore>((set, get) => ({
     set({
       books: get().books.map((b) => (b.id === bookId ? next : b)),
     });
+  },
+
+  downloadBookFromCloud: async (bookId) => {
+    const book = get().books.find((b) => b.id === bookId);
+    if (!book) return false;
+    const ok = await ensureLocalBookFile(book);
+    if (!ok) return false;
+    const fresh = (await local.getBook(bookId)) ?? {
+      ...book,
+      missingLocalFile: false,
+    };
+    set({ books: get().books.map((b) => (b.id === bookId ? fresh : b)) });
+    return true;
   },
 
   connectDrive: async () => {

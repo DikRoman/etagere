@@ -68,6 +68,15 @@ const dict = {
   },
   addToCollection: { ru: "Добавить в коллекцию", en: "Add to collection" },
   markFinished: { ru: "Отметить как «Закончена»", en: "Mark as “Finished”" },
+  downloadFromCloud: {
+    ru: "Загрузить из облака",
+    en: "Download from cloud",
+  },
+  downloadingFromCloud: { ru: "Загружаю…", en: "Downloading…" },
+  downloadFromCloudFailed: {
+    ru: "Не удалось загрузить. Проверь подключение диска.",
+    en: "Download failed. Check the disk connection.",
+  },
   unmarkFinished: {
     ru: "Убрать отметку «Закончена»",
     en: "Unmark as finished",
