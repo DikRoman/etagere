@@ -83,6 +83,7 @@ export type FileRestoreProgress = {
 
 export async function restoreMissingBookFiles(
   onProgress?: (p: FileRestoreProgress) => void,
+  shouldStop?: () => boolean,
 ): Promise<number> {
   const books = await local.listBooks();
   const missing: BookMeta[] = [];
@@ -109,6 +110,7 @@ export async function restoreMissingBookFiles(
   let n = 0;
   let completed = 0;
   await pool(missing, 2, async (book) => {
+    if (shouldStop?.()) return;
     onProgress?.({ done: completed, total, title: book.title });
     try {
       if (await ensureLocalBookFile(book)) n += 1;
@@ -123,10 +125,12 @@ export async function restoreMissingBookFiles(
 
 export async function recoverBooksFromConnectedDisks(
   onProgress?: (p: FileRestoreProgress) => void,
+  shouldStop?: () => boolean,
 ): Promise<number> {
   const providers = connectedProviders();
   const queue: { provider: CloudProvider; pick: CloudPick }[] = [];
   for (const provider of providers) {
+    if (shouldStop?.()) break;
     try {
       const picks = await listCloudBooks(provider);
       const existing = await local.listBooks();
@@ -147,6 +151,7 @@ export async function recoverBooksFromConnectedDisks(
   onProgress?.({ done: 0, total });
   let n = 0;
   for (const { provider, pick } of queue) {
+    if (shouldStop?.()) break;
     onProgress?.({ done: n, total, title: pick.name });
     try {
       const file = await downloadCloudPick(provider, pick);

@@ -32,6 +32,24 @@ let status: SyncStatus = "idle";
 let lastError: string | undefined;
 let progress: SyncProgress = null;
 let syncInFlight: Promise<void> | null = null;
+let cancelRequested = false;
+
+/** Ask the running sync to stop at the next checkpoint. */
+export function cancelSync(): void {
+  if (!syncInFlight) return;
+  cancelRequested = true;
+}
+
+function stopRequested(): boolean {
+  return cancelRequested;
+}
+
+/** Thrown at a checkpoint to unwind the sync; handled as a clean stop. */
+const CANCELLED = Symbol("sync-cancelled");
+
+function checkpoint(): void {
+  if (cancelRequested) throw CANCELLED;
+}
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
 const pendingBookIds = new Set<string | "*">();
 
@@ -390,6 +408,7 @@ export async function pullAndMerge(): Promise<void> {
   }
   if (syncInFlight) return syncInFlight;
 
+  cancelRequested = false;
   syncInFlight = (async () => {
     setStatus("syncing");
     setProgress({ phase: "catalog", done: 0, total: 0 });
@@ -523,27 +542,32 @@ export async function pullAndMerge(): Promise<void> {
         }
       }
 
+      checkpoint();
       await pushCollections();
       const refreshed = await local.listBooks();
       for (const book of refreshed) {
+        checkpoint();
         await pushBook(book.id);
       }
+      checkpoint();
       setProgress({ phase: "files", done: 0, total: 0 });
       await local.evictStaleBookFiles();
       await restoreMissingBookFiles((p) => {
         setProgress({ phase: "files", ...p });
-      });
+      }, stopRequested);
+      checkpoint();
       const afterRestore = await local.listBooks();
       if (afterRestore.length === 0 && cloudBooks.length === 0) {
         setProgress({ phase: "recover", done: 0, total: 0 });
         await recoverBooksFromConnectedDisks((p) => {
           setProgress({ phase: "recover", ...p });
-        });
+        }, stopRequested);
       }
 
       setStatus("ok");
     } catch (e) {
-      if (isAbortLike(e)) {
+      if (e === CANCELLED || isAbortLike(e)) {
+        progress = null;
         setStatus("idle");
         return;
       }
@@ -554,6 +578,7 @@ export async function pullAndMerge(): Promise<void> {
       );
     } finally {
       syncInFlight = null;
+      cancelRequested = false;
     }
   })();
 

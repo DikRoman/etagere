@@ -186,6 +186,19 @@ function pickerConfigError(): string {
   return PICKER_CONFIG_ERROR_EN;
 }
 
+/** The picker closed, or stayed open, without ever calling back. */
+function pickerNoAnswerError(): string {
+  if (typeof navigator !== "undefined" && navigator.language.startsWith("ru")) {
+    return "Окно Google не ответило. Попробуй ещё раз или вставь ссылку на файл Drive в поле ниже.";
+  }
+  return "Google’s window did not answer. Try again, or paste the Drive file link in the field below.";
+}
+
+/** Google Picker markup, used to tell "still open" from "closed silently". */
+function pickerDialog(): HTMLElement | null {
+  return document.querySelector<HTMLElement>(".picker-dialog, .picker.modal-dialog");
+}
+
 async function fetchDriveFileMeta(
   fileId: string,
   auth: { token?: string; key?: string },
@@ -311,26 +324,68 @@ export async function pickDriveBooks(): Promise<DrivePickedFile[] | null> {
 
   return new Promise((resolve, reject) => {
     let settled = false;
-    let sawPickerFrame = false;
+    let sawDialog = false;
+
+    const timers: number[] = [];
+    const cleanup = () => {
+      for (const id of timers) window.clearTimeout(id);
+      window.clearInterval(watcher);
+    };
 
     const finish = (value: DrivePickedFile[] | null) => {
       if (settled) return;
       settled = true;
-      window.clearTimeout(failTimer);
+      cleanup();
       resolve(value);
     };
 
     const fail = (error: Error) => {
       if (settled) return;
       settled = true;
-      window.clearTimeout(failTimer);
+      cleanup();
       reject(error);
     };
 
-    const failTimer = window.setTimeout(() => {
-      if (settled || sawPickerFrame) return;
-      fail(new Error(pickerConfigError()));
-    }, 4000);
+    // Without these the promise can hang forever: if Google's iframe never
+    // calls back, the caller just spins with nothing on screen.
+    //
+    // 1. The dialog never appears — the API key or OAuth app is misconfigured.
+    timers.push(
+      window.setTimeout(() => {
+        if (settled || sawDialog) return;
+        fail(new Error(pickerConfigError()));
+      }, 8000),
+    );
+
+    // 2. The dialog appeared and then went away without a callback. This is
+    //    the silent case: the window closes and nothing happens.
+    const watcher = window.setInterval(() => {
+      if (settled) return;
+      const open = Boolean(pickerDialog());
+      if (open) {
+        sawDialog = true;
+        return;
+      }
+      if (!sawDialog) return;
+      // Give a late callback a moment to land before giving up.
+      timers.push(
+        window.setTimeout(() => {
+          if (settled) return;
+          console.warn("[etagere] Google Picker closed without a callback");
+          fail(new Error(pickerNoAnswerError()));
+        }, 1200),
+      );
+      window.clearInterval(watcher);
+    }, 400);
+
+    // 3. Backstop: the dialog stays open but nothing ever comes back.
+    timers.push(
+      window.setTimeout(() => {
+        if (settled) return;
+        console.warn("[etagere] Google Picker timed out with no answer");
+        fail(new Error(pickerNoAnswerError()));
+      }, 5 * 60 * 1000),
+    );
 
     try {
       const builder = new picker.PickerBuilder()
@@ -347,7 +402,7 @@ export async function pickDriveBooks(): Promise<DrivePickedFile[] | null> {
         .enableFeature(picker.Feature.MULTISELECT_ENABLED);
 
       builder.setCallback((data) => {
-        sawPickerFrame = true;
+        sawDialog = true;
         const action = pickerAction(data, picker);
         if (action === "cancel" || action === "cancelled") {
           finish(null);
@@ -374,9 +429,6 @@ export async function pickDriveBooks(): Promise<DrivePickedFile[] | null> {
       });
 
       builder.build().setVisible(true);
-      window.setTimeout(() => {
-        sawPickerFrame = true;
-      }, 800);
     } catch (e) {
       fail(e instanceof Error ? e : new Error(String(e)));
     }

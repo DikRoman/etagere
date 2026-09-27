@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
+  cancelSync,
   getSyncError,
   getSyncProgress,
   getSyncStatus,
@@ -98,6 +99,15 @@ export function SyncStatusLine() {
         <span className="library-sync-label" title={error || progress?.title || undefined}>
           {syncLabel(status, progress, ru)}
         </span>
+        {status === "syncing" && (
+          <button
+            type="button"
+            className="library-sync-btn"
+            onClick={() => cancelSync()}
+          >
+            {ru ? "Отменить" : "Cancel"}
+          </button>
+        )}
         <button
           type="button"
           className="library-sync-btn"
