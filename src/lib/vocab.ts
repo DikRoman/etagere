@@ -83,7 +83,7 @@ function txDone(tx: IDBTransaction): Promise<void> {
   });
 }
 
-function normalizeWord(s: string): string {
+export function normalizeWord(s: string): string {
   return s.trim().toLowerCase();
 }
 
@@ -441,6 +441,7 @@ async function putEntry(entry: VocabEntry): Promise<VocabEntry> {
   tx.objectStore(STORE).put(entry);
   await txDone(tx);
   db.close();
+  invalidateKnownWords();
   return entry;
 }
 
@@ -512,6 +513,41 @@ export async function addVocabEntry(
   return putEntry(entry);
 }
 
+let knownWordsCache: Set<string> | null = null;
+const knownWordsListeners = new Set<() => void>();
+
+/** Every word and lemma in the vocabulary, normalized, for marking text. */
+export async function loadKnownWords(): Promise<Set<string>> {
+  if (knownWordsCache) return knownWordsCache;
+  const rows = await listVocabEntries();
+  const set = new Set<string>();
+  for (const row of rows) {
+    const w = normalizeWord(row.word);
+    if (w) set.add(w);
+    if (row.lemma) {
+      const l = normalizeWord(row.lemma);
+      if (l) set.add(l);
+    }
+  }
+  knownWordsCache = set;
+  return set;
+}
+
+export function knownWordsNow(): Set<string> | null {
+  return knownWordsCache;
+}
+
+/** Called whenever the vocabulary changes, so open pages re-mark. */
+export function invalidateKnownWords(): void {
+  knownWordsCache = null;
+  for (const fn of knownWordsListeners) fn();
+}
+
+export function subscribeKnownWords(fn: () => void): () => void {
+  knownWordsListeners.add(fn);
+  return () => knownWordsListeners.delete(fn);
+}
+
 export async function listVocabEntries(): Promise<VocabEntry[]> {
   const db = await openDb();
   const tx = db.transaction(STORE, "readonly");
@@ -534,6 +570,7 @@ export async function deleteVocabEntry(id: string): Promise<void> {
   tx.objectStore(STORE).delete(id);
   await txDone(tx);
   db.close();
+  invalidateKnownWords();
 }
 
 export function isVocabDue(entry: VocabEntry, at = new Date()): boolean {

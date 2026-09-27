@@ -8,7 +8,7 @@ import {
   expandWord,
   flowGlyphs,
   hitGlyph,
-  indexPdfTextLayer,
+  getPdfTextIndex,
   pickFromGlyphs,
   type PdfGlyph,
   type PdfTextIndex,
@@ -52,7 +52,7 @@ export function PdfSelectLayer({
       setPreview([]);
       return;
     }
-    indexRef.current = indexPdfTextLayer(textLayer);
+    indexRef.current = getPdfTextIndex(textLayer, revision);
   }, [enabled, textLayer, revision]);
 
   useEffect(() => {

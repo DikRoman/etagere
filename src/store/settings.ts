@@ -23,6 +23,7 @@ interface SettingsState {
   notePaper: NotePaper;
   sidebarWidth: number;
   marginNotes: boolean;
+  vocabMarks: boolean;
   marginRatio: number;
   filmstripOpen: boolean;
   dailyGoal: number;
@@ -35,6 +36,7 @@ interface SettingsState {
   setNotePaper: (paper: NotePaper) => void;
   setSidebarWidth: (width: number) => void;
   setMarginNotes: (on: boolean) => void;
+  setVocabMarks: (on: boolean) => void;
   setMarginRatio: (ratio: number) => void;
   setFilmstripOpen: (open: boolean) => void;
   setDailyGoal: (n: number) => void;
@@ -51,6 +53,7 @@ export const useSettingsStore = create<SettingsState>()(
       notePaper: "plain",
       sidebarWidth: SIDEBAR_WIDTH_DEFAULT,
       marginNotes: true,
+      vocabMarks: true,
       marginRatio: MARGIN_RATIO_DEFAULT,
       filmstripOpen: false,
       dailyGoal: 20,
@@ -70,6 +73,7 @@ export const useSettingsStore = create<SettingsState>()(
           ),
         }),
       setMarginNotes: (marginNotes) => set({ marginNotes }),
+      setVocabMarks: (vocabMarks) => set({ vocabMarks }),
       setFilmstripOpen: (filmstripOpen) => set({ filmstripOpen }),
       setDailyGoal: (n) =>
         set({
@@ -94,6 +98,7 @@ export const useSettingsStore = create<SettingsState>()(
           epubType: { ...current.epubType, ...(saved.epubType ?? {}) },
           // A zero margin used to mean "off"; the toggle owns that now.
           marginNotes: saved.marginNotes ?? (saved.marginRatio ?? 1) > 0,
+          vocabMarks: saved.vocabMarks ?? true,
           marginRatio: Math.min(
             MARGIN_RATIO_MAX,
             Math.max(

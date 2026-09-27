@@ -68,6 +68,11 @@ const dict = {
   },
   addToCollection: { ru: "Добавить в коллекцию", en: "Add to collection" },
   markFinished: { ru: "Отметить как «Закончена»", en: "Mark as “Finished”" },
+  vocabMarks: { ru: "Слова из словаря", en: "Vocabulary words" },
+  vocabMarksHint: {
+    ru: "Подчёркивать слова, которые уже есть в твоём словаре",
+    en: "Underline words already in your vocabulary",
+  },
   downloadFromCloud: {
     ru: "Загрузить из облака",
     en: "Download from cloud",

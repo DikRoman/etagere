@@ -204,6 +204,25 @@ export function indexPdfTextLayer(layer: HTMLElement): PdfTextIndex {
   return { glyphs, pageText: joinPageText(glyphs), width, height };
 }
 
+type CachedIndex = { revision: string; index: PdfTextIndex };
+const indexCache = new WeakMap<HTMLElement, CachedIndex>();
+
+/**
+ * Indexing measures every glyph on the page, so the selection layer and the
+ * vocabulary layer share one result per rendered page instead of each paying
+ * for its own.
+ */
+export function getPdfTextIndex(
+  layer: HTMLElement,
+  revision: string,
+): PdfTextIndex {
+  const hit = indexCache.get(layer);
+  if (hit && hit.revision === revision) return hit.index;
+  const index = indexPdfTextLayer(layer);
+  indexCache.set(layer, { revision, index });
+  return index;
+}
+
 export function hitGlyph(
   index: PdfTextIndex,
   x: number,
@@ -282,6 +301,35 @@ export function expandLine(index: PdfTextIndex, hit: PdfGlyph): PdfGlyph[] {
   return index.glyphs.filter(
     (g) => g.column === hit.column && g.line === hit.line,
   );
+}
+
+export type PdfWordRun = { text: string; glyphs: PdfGlyph[] };
+
+/**
+ * Every word on the page, as a run of word characters that stays on one line.
+ * Used to underline words the reader already has in their vocabulary.
+ */
+export function wordRuns(index: PdfTextIndex): PdfWordRun[] {
+  const out: PdfWordRun[] = [];
+  let run: PdfGlyph[] = [];
+  const flush = () => {
+    if (run.length) {
+      out.push({ text: run.map((g) => g.ch).join(""), glyphs: run });
+      run = [];
+    }
+  };
+  for (const g of index.glyphs) {
+    const prev = run[run.length - 1];
+    const breaks =
+      prev && (prev.line !== g.line || prev.column !== g.column);
+    if (!isWordChar(g.ch) || breaks) {
+      flush();
+      if (!isWordChar(g.ch)) continue;
+    }
+    run.push(g);
+  }
+  flush();
+  return out;
 }
 
 export function mergeGlyphRects(

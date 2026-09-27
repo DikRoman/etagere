@@ -124,6 +124,8 @@ export function ReaderToolbar({ title, pageCount, bookId, format }: Props) {
   const locale = useSettingsStore((s) => s.locale);
   const spread = useSettingsStore((s) => s.spread);
   const setSpread = useSettingsStore((s) => s.setSpread);
+  const vocabMarks = useSettingsStore((s) => s.vocabMarks);
+  const setVocabMarks = useSettingsStore((s) => s.setVocabMarks);
   const theme = useSettingsStore((s) => s.theme);
   const setTheme = useSettingsStore((s) => s.setTheme);
   const filmstripOpen = useSettingsStore((s) => s.filmstripOpen);
@@ -268,6 +270,16 @@ export function ReaderToolbar({ title, pageCount, bookId, format }: Props) {
         >
           +
         </button>
+        {format === "pdf" && (
+          <button
+            type="button"
+            className={`btn-ghost compact ${vocabMarks ? "is-on" : ""}`}
+            onClick={() => setVocabMarks(!vocabMarks)}
+            title={t("vocabMarksHint", locale)}
+          >
+            {t("vocabMarks", locale)}
+          </button>
+        )}
         {/* PDF scrolls vertically in a single column, so a spread is
             an EPUB-only option. */}
         {format === "epub" && (

@@ -2539,6 +2539,28 @@ html[data-theme="night"] .page-thumb {
   touch-action: pan-y;
 }
 
+.pdf-vocab-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.pdf-vocab-mark {
+  position: absolute;
+  pointer-events: none;
+  border-bottom: 2px solid rgba(190, 120, 30, 0.55);
+  border-radius: 1px;
+}
+
+html[data-theme="paper"] .pdf-vocab-mark {
+  border-bottom-color: rgba(160, 96, 20, 0.6);
+}
+
+html[data-theme="night"] .pdf-vocab-mark {
+  border-bottom-color: rgba(230, 170, 70, 0.6);
+}
+
 .pdf-select-box {
   position: absolute;
   pointer-events: none;
@@ -2547,7 +2569,29 @@ html[data-theme="night"] .page-thumb {
   mix-blend-mode: multiply;
 }
 
-html[data-theme="night"] .pdf-select-box {
+html[data-theme="night"] .pdf-vocab-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.pdf-vocab-mark {
+  position: absolute;
+  pointer-events: none;
+  border-bottom: 2px solid rgba(190, 120, 30, 0.55);
+  border-radius: 1px;
+}
+
+html[data-theme="paper"] .pdf-vocab-mark {
+  border-bottom-color: rgba(160, 96, 20, 0.6);
+}
+
+html[data-theme="night"] .pdf-vocab-mark {
+  border-bottom-color: rgba(230, 170, 70, 0.6);
+}
+
+.pdf-select-box {
   mix-blend-mode: screen;
   background: rgba(90, 150, 255, 0.42);
 }

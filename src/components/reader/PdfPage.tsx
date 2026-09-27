@@ -9,6 +9,7 @@ import { HIGHLIGHT_COLORS, QUOTE_MARKER, NOTE_MARKER } from "@/lib/types";
 import { MARGIN_GUTTER_PX } from "@/lib/ink-space";
 import { InkLayer } from "./InkLayer";
 import { MarginTextLayer } from "./MarginTextLayer";
+import { PdfVocabLayer } from "./PdfVocabLayer";
 import { PdfLinkLayer } from "./PdfLinkLayer";
 import { PdfSelectLayer } from "./PdfSelectLayer";
 
@@ -39,6 +40,7 @@ export function PdfPage({
 
   const annotations = useReaderStore((s) => s.annotations);
   const paper = useSettingsStore((s) => s.notePaper);
+  const vocabMarks = useSettingsStore((s) => s.vocabMarks);
   const tool = useReaderStore((s) => s.tool);
   const isBookmarked = useReaderStore((s) =>
     s.annotations.bookmarks.some((b) => b.page === pageNumber),
@@ -198,6 +200,13 @@ export function PdfPage({
                   pdf={pdf}
                   pageNumber={pageNumber}
                   viewport={viewport}
+                />
+              )}
+              {rendered && visible && vocabMarks && (
+                <PdfVocabLayer
+                  enabled
+                  textLayer={textLayerEl}
+                  revision={`${pageNumber}:${scale}:${marginRatio}:${rendered}`}
                 />
               )}
               {rendered && visible && (
