@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { createPortal } from "react-dom";
 import { useSettingsStore } from "@/store/settings";
 import { useReaderStore } from "@/store/reader";
 import { useLibraryStore } from "@/store/library";
@@ -17,7 +16,7 @@ import {
   NOTE_PAPERS,
   type NotePaper,
 } from "@/lib/types";
-import { Slider, usePopover } from "./panel-kit";
+import { Slider } from "./panel-kit";
 
 const PAPER_LABELS: Record<NotePaper, MessageKey> = {
   plain: "paperPlain",
@@ -26,8 +25,11 @@ const PAPER_LABELS: Record<NotePaper, MessageKey> = {
   gridWide: "paperGridWide",
 };
 
-/** Width and ruling of the writing strip beside a PDF page. */
-export function MarginPanel() {
+/**
+ * Width and ruling of the writing strip beside a PDF page; rendered inside
+ * the reader's View panel.
+ */
+export function MarginSettings() {
   const locale = useSettingsStore((s) => s.locale);
   const paper = useSettingsStore((s) => s.notePaper);
   const setPaper = useSettingsStore((s) => s.setNotePaper);
@@ -40,7 +42,6 @@ export function MarginPanel() {
   const title =
     useLibraryStore((s) => s.books.find((b) => b.id === bookId)?.title) ??
     "Étagère";
-  const { open, setOpen, spot, buttonRef, panelRef } = usePopover();
   const [busy, setBusy] = useState(false);
   const [hint, setHint] = useState<MessageKey | null>(null);
 
@@ -69,14 +70,8 @@ export function MarginPanel() {
     }
   }
 
-  const panel = (
-    <div
-      className="type-panel"
-      role="dialog"
-      aria-label={t("marginNotes", locale)}
-      ref={panelRef}
-      style={{ top: spot.top, left: spot.left }}
-    >
+  return (
+    <div className="view-section" role="group" aria-label={t("marginNotes", locale)}>
       <label className="toggle-row">
         <span className="type-row-label">{t("marginNotesOn", locale)}</span>
         <span className={`toggle ${on ? "is-on" : ""}`}>
@@ -127,20 +122,5 @@ export function MarginPanel() {
       </button>
       {hint && <p className="tiny">{t(hint, locale)}</p>}
     </div>
-  );
-
-  return (
-    <>
-      <button
-        type="button"
-        ref={buttonRef}
-        className={`btn-ghost compact ${open ? "is-on" : ""}`}
-        onClick={() => setOpen((v) => !v)}
-        title={t("marginNotes", locale)}
-      >
-        {t("marginNotes", locale)}
-      </button>
-      {open && createPortal(panel, document.body)}
-    </>
   );
 }

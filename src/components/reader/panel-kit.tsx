@@ -25,6 +25,15 @@ export function usePopover() {
     const anchor = button.getBoundingClientRect();
     const { offsetWidth: width, offsetHeight: height } = panel;
     const edge = 8;
+    // The button can be hidden (moved into a "More" menu on small screens):
+    // then centre the panel just under the reader bar instead.
+    if (!anchor.width && !anchor.height) {
+      setSpot({
+        top: 64,
+        left: Math.max(edge, (window.innerWidth - width) / 2),
+      });
+      return;
+    }
     const left = Math.min(
       Math.max(edge, anchor.right - width),
       Math.max(edge, window.innerWidth - width - edge),

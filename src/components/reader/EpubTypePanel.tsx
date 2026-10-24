@@ -1,10 +1,9 @@
 "use client";
 
-import { createPortal } from "react-dom";
 import { useSettingsStore } from "@/store/settings";
 import { t, type MessageKey } from "@/lib/i18n";
 import type { EpubFontChoice } from "@/lib/types";
-import { Slider, usePopover } from "./panel-kit";
+import { Slider } from "./panel-kit";
 
 const FONT_LABELS: { id: EpubFontChoice; key: MessageKey }[] = [
   { id: "literary", key: "fontLiterary" },
@@ -13,23 +12,17 @@ const FONT_LABELS: { id: EpubFontChoice; key: MessageKey }[] = [
   { id: "verdana", key: "fontVerdana" },
 ];
 
-export function EpubTypePanel() {
+/** EPUB typography controls; rendered inside the reader's View panel. */
+export function EpubTypeSettings() {
   const locale = useSettingsStore((s) => s.locale);
   const type = useSettingsStore((s) => s.epubType);
   const setEpubType = useSettingsStore((s) => s.setEpubType);
   const resetEpubType = useSettingsStore((s) => s.resetEpubType);
-  const { open, setOpen, spot, buttonRef, panelRef } = usePopover();
 
   const em = (v: number) => `${v.toFixed(2)} em`;
 
-  const panel = (
-    <div
-      className="type-panel"
-      role="dialog"
-      aria-label={t("typography", locale)}
-      ref={panelRef}
-      style={{ top: spot.top, left: spot.left }}
-    >
+  return (
+    <div className="view-section" role="group" aria-label={t("typography", locale)}>
       <div className="type-group">
         <span className="type-row-label">{t("fontLabel", locale)}</span>
         <div className="type-choices">
@@ -121,21 +114,5 @@ export function EpubTypePanel() {
         </button>
       </div>
     </div>
-  );
-
-  return (
-    <>
-      <button
-        type="button"
-        ref={buttonRef}
-        className={`btn-ghost compact ${open ? "is-on" : ""}`}
-        onClick={() => setOpen((v) => !v)}
-        title={t("typography", locale)}
-      >
-        Aa
-      </button>
-      {/* Rendered on the body so the reader frame cannot clip it. */}
-      {open && createPortal(panel, document.body)}
-    </>
   );
 }

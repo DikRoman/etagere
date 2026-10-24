@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useSettingsStore } from "@/store/settings";
@@ -13,14 +13,36 @@ import {
   type EpubFontChoice,
   type ReaderTool,
 } from "@/lib/types";
-import { EpubTypePanel } from "./EpubTypePanel";
-import { HighlightPalette } from "./HighlightPalette";
-import { MarginPanel } from "./MarginPanel";
-import { lookupSelection } from "@/lib/ai";
-import { isLookupSelection } from "@/lib/word-lookup";
 import { printedLabel } from "@/lib/toc";
+import { EpubTypeSettings } from "./EpubTypePanel";
+import { HighlightPalette } from "./HighlightPalette";
+import { MarginSettings } from "./MarginPanel";
 import { BookSearchPanel } from "./BookSearchPanel";
 import { usePopover } from "./panel-kit";
+import {
+  IconBack,
+  IconBookmark,
+  IconCheck,
+  IconChevronLeft,
+  IconChevronRight,
+  IconMinus,
+  IconMore,
+  IconNotes,
+  IconPencil,
+  IconPlus,
+  IconSearch,
+  IconSparkles,
+  IconToc,
+  IconView,
+} from "./ReaderIcons";
+
+/*
+ * The reader bar, laid out in the order a reader needs things:
+ *   where am I (back, title, page) → find (contents, search) → zoom →
+ *   mark (bookmark, draw, notes) → view → AI.
+ * Every button has an icon and a label; below ~1180px the labels hide, and
+ * on phones the less frequent ones move into "More".
+ */
 
 const TEXT_FONTS: { id: EpubFontChoice; key: MessageKey }[] = [
   { id: "literary", key: "fontLiterary" },
@@ -36,7 +58,39 @@ interface Props {
   format: BookMeta["format"];
 }
 
-function ReaderPager({
+function BarButton({
+  icon,
+  label,
+  on,
+  onClick,
+  className = "",
+  buttonRef,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  on?: boolean;
+  onClick: () => void;
+  className?: string;
+  buttonRef?: React.Ref<HTMLButtonElement>;
+}) {
+  return (
+    <button
+      ref={buttonRef}
+      type="button"
+      className={`rb-btn ${on ? "is-on" : ""} ${className}`}
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      aria-pressed={on}
+    >
+      {icon}
+      <span className="rb-btn-label">{label}</span>
+    </button>
+  );
+}
+
+/** "p. [9] of 822 · 1%": the page number is an input to jump with. */
+function PageLine({
   format,
   pageCount: metaCount,
 }: {
@@ -52,69 +106,143 @@ function ReaderPager({
   const epubSheet = useReaderStore((s) => s.epubSheet);
   const requestEpubTurn = useReaderStore((s) => s.requestEpubTurn);
   const pageLabels = useReaderStore((s) => s.pageLabels);
-  const label = printedLabel(pageLabels, page);
+  const printed = printedLabel(pageLabels, page);
+  const [draft, setDraft] = useState<string | null>(null);
+
   const paged = format === "epub" && spread;
   const sheet = epubSheet ?? { index: 0, count: 1 };
   const canPrev = paged ? sheet.index > 0 || page > 1 : page > 1;
-  const canNext = paged
-    ? sheet.index < sheet.count - 1 || page < pageCount
-    : page < pageCount;
+  const canNext = paged ? sheet.index < sheet.count - 1 || page < pageCount : page < pageCount;
+  const percent = pageCount ? Math.round((page / pageCount) * 100) : 0;
 
   function step(dir: -1 | 1) {
-    if (format === "epub") {
-      requestEpubTurn(dir);
-      return;
-    }
-    void goToPage(page + dir);
+    if (format === "epub") requestEpubTurn(dir);
+    else void goToPage(page + dir);
+  }
+
+  function commit() {
+    if (draft === null) return;
+    const n = Number(draft);
+    setDraft(null);
+    if (Number.isFinite(n) && n >= 1) void goToPage(Math.min(pageCount, Math.round(n)));
   }
 
   return (
-    <div className="reader-pager" role="navigation" aria-label={t("pageOf", locale)}>
+    <div className="rb-page" role="navigation" aria-label={t("readingProgress", locale)}>
       <button
         type="button"
-        className="icon-btn"
+        className="rb-step"
         disabled={!canPrev}
         onClick={() => step(-1)}
         aria-label={locale === "ru" ? "Назад" : "Previous"}
       >
-        ‹
+        <IconChevronLeft size={16} />
       </button>
       {format === "epub" ? (
-        <span className="reader-pager-label">
-          {t("epubChapter", locale)} {page} / {pageCount}
-          {paged && sheet.count > 1 && (
-            <span className="epub-sheet-count">
-              {`\u00A0· ${sheet.index + 1}/${sheet.count}`}
-            </span>
-          )}
+        <span className="rb-page-text">
+          {t("epubChapter", locale)} {page} {t("pageOf", locale)} {pageCount}
+          {paged && sheet.count > 1 ? ` · ${sheet.index + 1}/${sheet.count}` : ""}
         </span>
       ) : (
-        <label className="page-input reader-page-slider">
+        <span className="rb-page-text">
+          {t("pageShort", locale)}{" "}
           <input
-            type="range"
-            min={1}
-            max={Math.max(1, pageCount)}
-            value={page}
-            onChange={(e) => {
-              const n = Number(e.target.value);
-              if (n >= 1 && n <= pageCount) void goToPage(n);
+            className="rb-page-input"
+            inputMode="numeric"
+            aria-label={t("goToPageLabel", locale)}
+            value={draft ?? String(page)}
+            style={{ width: `${Math.max(2, String(pageCount).length) + 1}ch` }}
+            onFocus={(e) => {
+              setDraft(String(page));
+              e.currentTarget.select();
             }}
-          />
-          <span>
-            {page} {t("pageOf", locale)} {pageCount}
-          </span>
-          {label && <span className="page-printed">· {label}</span>}
-        </label>
+            onChange={(e) => setDraft(e.target.value.replace(/\D/g, ""))}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                commit();
+                e.currentTarget.blur();
+              }
+              if (e.key === "Escape") {
+                setDraft(null);
+                e.currentTarget.blur();
+              }
+            }}
+          />{" "}
+          {t("pageOf", locale)} {pageCount}
+          {printed ? <span className="rb-page-printed"> · {printed}</span> : null}
+        </span>
       )}
+      <span className="rb-page-pct">· {percent}%</span>
       <button
         type="button"
-        className="icon-btn"
+        className="rb-step"
         disabled={!canNext}
         onClick={() => step(1)}
         aria-label={locale === "ru" ? "Вперёд" : "Next"}
       >
-        ›
+        <IconChevronRight size={16} />
       </button>
+    </div>
+  );
+}
+
+/**
+ * Reading progress along the bar's bottom edge. For PDF it is also the
+ * scrubber the old slider was: press or drag to jump.
+ */
+function ProgressStrip({ format, pageCount: metaCount }: { format: BookMeta["format"]; pageCount: number }) {
+  const locale = useSettingsStore((s) => s.locale);
+  const page = useReaderStore((s) => s.page);
+  const liveCount = useReaderStore((s) => s.pageCount);
+  const pageCount = Math.max(1, liveCount || metaCount);
+  const goToPage = useReaderStore((s) => s.goToPage);
+  const [preview, setPreview] = useState<number | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  const scrub = format === "pdf";
+
+  const pageAt = (clientX: number) => {
+    const r = ref.current?.getBoundingClientRect();
+    if (!r) return page;
+    const share = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
+    return Math.max(1, Math.min(pageCount, Math.round(share * (pageCount - 1)) + 1));
+  };
+
+  const shown = preview ?? page;
+  return (
+    <div
+      ref={ref}
+      className={`rb-progress ${scrub ? "is-scrub" : ""}`}
+      role={scrub ? "slider" : "progressbar"}
+      aria-label={t("readingProgress", locale)}
+      aria-valuemin={1}
+      aria-valuemax={pageCount}
+      aria-valuenow={shown}
+      onPointerDown={
+        scrub
+          ? (e) => {
+              e.currentTarget.setPointerCapture(e.pointerId);
+              setPreview(pageAt(e.clientX));
+            }
+          : undefined
+      }
+      onPointerMove={scrub ? (e) => preview !== null && setPreview(pageAt(e.clientX)) : undefined}
+      onPointerUp={
+        scrub
+          ? (e) => {
+              const target = pageAt(e.clientX);
+              setPreview(null);
+              void goToPage(target);
+            }
+          : undefined
+      }
+    >
+      <div style={{ width: `${(shown / pageCount) * 100}%` }} />
+      {preview !== null && (
+        <span className="rb-progress-tip" style={{ left: `${(shown / pageCount) * 100}%` }}>
+          {shown}
+        </span>
+      )}
     </div>
   );
 }
@@ -152,20 +280,18 @@ export function ReaderToolbar({ title, pageCount, bookId, format }: Props) {
   const setSidebarOpen = useReaderStore((s) => s.setSidebarOpen);
   const setSidebarTab = useReaderStore((s) => s.setSidebarTab);
   const clearPageInk = useReaderStore((s) => s.clearPageInk);
-  const setAiOpen = useReaderStore((s) => s.setAiOpen);
-  const setAiResult = useReaderStore((s) => s.setAiResult);
-  const selection = useReaderStore((s) => s.selection);
   const bookmarked = useReaderStore((s) =>
     s.annotations.bookmarks.some((b) => b.page === s.page),
   );
   const toggleBookmark = useReaderStore((s) => s.toggleBookmark);
 
+  // Destructured so the compiler can tell the refs from the plain state.
   const {
-    open: appearanceOpen,
-    setOpen: setAppearanceOpen,
-    spot: appearanceSpot,
-    buttonRef: appearanceBtn,
-    panelRef: appearancePanelRef,
+    open: viewOpen,
+    setOpen: setViewOpen,
+    spot: viewSpot,
+    buttonRef: viewBtn,
+    panelRef: viewPanelRef,
   } = usePopover();
   const {
     open: searchOpen,
@@ -174,33 +300,24 @@ export function ReaderToolbar({ title, pageCount, bookId, format }: Props) {
     buttonRef: searchBtn,
     panelRef: searchPanelRef,
   } = usePopover();
-  const [markupOpen, setMarkupOpen] = useState(false);
+  const {
+    open: moreOpen,
+    setOpen: setMoreOpen,
+    spot: moreSpot,
+    buttonRef: moreBtn,
+    panelRef: morePanelRef,
+  } = usePopover();
+  const [drawOpen, setDrawOpen] = useState(false);
+  const drawing = drawOpen || tool !== "select";
 
-  async function runTranslateSelection() {
-    if (!selection?.text) return;
-    const text = selection.text;
-    const sentence = selection.sentence || text;
-    const lookupTitle = isLookupSelection(text)
-      ? t("wordLookup", locale)
-      : t("aiTranslateTitle", locale);
-    setAiOpen(true);
-    setAiResult({
-      kind: "lookup",
-      title: lookupTitle,
-      data: null,
-      loading: true,
-    });
-    try {
-      const data = await lookupSelection(text, locale, sentence);
-      setAiResult({ kind: "lookup", title: lookupTitle, data });
-    } catch (e) {
-      setAiResult({
-        kind: "plain",
-        title: lookupTitle,
-        body: e instanceof Error ? e.message : "Error",
-      });
-    }
+  // Picking something from "More" should close it.
+  const closeMore = () => setMoreOpen(false);
+
+  function togglePanel(tab: "toc" | "notes" | "chat") {
+    if (sidebarOpen && sidebarTab === tab) setSidebarOpen(false);
+    else setSidebarTab(tab);
   }
+  const panelOn = (tab: "toc" | "notes" | "chat") => sidebarOpen && sidebarTab === tab;
 
   function toolBtn(id: ReaderTool, label: string) {
     return (
@@ -209,111 +326,117 @@ export function ReaderToolbar({ title, pageCount, bookId, format }: Props) {
         className={`btn-ghost compact ${tool === id ? "is-on" : ""}`}
         onClick={() => {
           setTool(id);
-          if (id === "type") {
-            useSettingsStore.getState().setMarginNotes(true);
-          }
+          if (id === "type") useSettingsStore.getState().setMarginNotes(true);
         }}
-        title={label}
       >
         {label}
       </button>
     );
   }
 
-  function panelBtn(
-    tab: "toc" | "bookmarks" | "notes" | "chat",
-    label: string,
-    icon: string,
-  ) {
-    const on = sidebarOpen && sidebarTab === tab;
-    return (
+  const zoomPct = Math.round(scale * 100);
+  const zoom = (
+    <div className="rb-zoom" role="group" aria-label={`${zoomPct}%`}>
       <button
         type="button"
-        className={`reader-icon-btn ${on ? "is-on" : ""}`}
-        onClick={() => {
-          if (on) setSidebarOpen(false);
-          else setSidebarTab(tab);
-        }}
-        title={label}
-        aria-label={label}
+        className="rb-step"
+        onClick={() => setScale(scale - 0.1)}
+        aria-label={t("zoomOut", locale)}
+        title={t("zoomOut", locale)}
       >
-        {icon}
+        <IconMinus size={16} />
       </button>
-    );
-  }
+      <button
+        type="button"
+        className="rb-zoom-pct"
+        onClick={() => setScale(1)}
+        title={locale === "ru" ? "Сбросить до 100%" : "Reset to 100%"}
+      >
+        {zoomPct}%
+      </button>
+      <button
+        type="button"
+        className="rb-step"
+        onClick={() => setScale(scale + 0.1)}
+        aria-label={t("zoomIn", locale)}
+        title={t("zoomIn", locale)}
+      >
+        <IconPlus size={16} />
+      </button>
+    </div>
+  );
 
-  const appearancePanel = (
+  const viewPanel = (
     <div
-      className="type-panel reader-appearance-panel"
+      className="type-panel reader-view-panel"
       role="dialog"
-      aria-label={t("appearance", locale)}
-      ref={appearancePanelRef}
-      style={{ top: appearanceSpot.top, left: appearanceSpot.left }}
+      aria-label={t("barView", locale)}
+      ref={viewPanelRef}
+      style={{ top: viewSpot.top, left: viewSpot.left }}
     >
-      <div className="reader-cluster" role="group" aria-label={t("spread", locale)}>
-        <button
-          type="button"
-          className="icon-btn"
-          onClick={() => setScale(scale - 0.1)}
-          aria-label="−"
-        >
-          −
-        </button>
-        <button
-          type="button"
-          className="icon-btn"
-          onClick={() => setScale(scale + 0.1)}
-          aria-label="+"
-        >
-          +
-        </button>
+      <div className="view-section">
+        <span className="type-row-label">{t("viewTheme", locale)}</span>
+        <div className="lang-switch theme-switch">
+          {(["day", "paper", "night"] as const).map((th) => (
+            <button
+              key={th}
+              type="button"
+              className={theme === th ? "active" : ""}
+              onClick={() => setTheme(th)}
+            >
+              {th === "day"
+                ? t("themeDay", locale)
+                : th === "paper"
+                  ? t("themePaper", locale)
+                  : t("themeNight", locale)}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="view-toggles">
+        {format === "pdf" && (
+          <button
+            type="button"
+            className={`btn-ghost compact ${filmstripOpen ? "is-on" : ""}`}
+            aria-pressed={filmstripOpen}
+            onClick={() => setFilmstripOpen(!filmstripOpen)}
+          >
+            {t("pagesPanel", locale)}
+          </button>
+        )}
         {format === "pdf" && (
           <button
             type="button"
             className={`btn-ghost compact ${vocabMarks ? "is-on" : ""}`}
+            aria-pressed={vocabMarks}
             onClick={() => setVocabMarks(!vocabMarks)}
             title={t("vocabMarksHint", locale)}
           >
             {t("vocabMarks", locale)}
           </button>
         )}
-        {/* PDF scrolls vertically in a single column, so a spread is
-            an EPUB-only option. */}
+        {/* PDF scrolls in one column, so a spread is EPUB-only. */}
         {format === "epub" && (
           <button
             type="button"
             className={`btn-ghost compact ${spread ? "is-on" : ""}`}
+            aria-pressed={spread}
             onClick={() => setSpread(!spread)}
           >
             {t("spread", locale)}
           </button>
         )}
       </div>
-      <div className="lang-switch theme-switch">
-        {(["day", "paper", "night"] as const).map((th) => (
-          <button
-            key={th}
-            type="button"
-            className={theme === th ? "active" : ""}
-            onClick={() => setTheme(th)}
-          >
-            {th === "day"
-              ? t("themeDay", locale)
-              : th === "paper"
-                ? t("themePaper", locale)
-                : t("themeNight", locale)}
-          </button>
-        ))}
-      </div>
-      {format === "pdf" && (
-        <button
-          type="button"
-          className={`btn-ghost compact ${filmstripOpen ? "is-on" : ""}`}
-          aria-pressed={filmstripOpen}
-          onClick={() => setFilmstripOpen(!filmstripOpen)}
-        >
-          {t("pagesPanel", locale)}
-        </button>
+      {format === "pdf" ? (
+        <>
+          <span className="view-heading">{t("viewMargins", locale)}</span>
+          <MarginSettings />
+        </>
+      ) : (
+        <>
+          <span className="view-heading">{t("typography", locale)}</span>
+          <EpubTypeSettings />
+        </>
       )}
     </div>
   );
@@ -330,8 +453,69 @@ export function ReaderToolbar({ title, pageCount, bookId, format }: Props) {
     </div>
   );
 
-  const markup = (
-    <div className="reader-markup-tray reader-bar-tools">
+  // Phones: the less frequent actions, with their labels.
+  const moreMenu = (
+    <div
+      className="type-panel reader-more-menu"
+      role="menu"
+      ref={morePanelRef}
+      style={{ top: moreSpot.top, left: moreSpot.left }}
+    >
+      <div className="rb-more-zoom">{zoom}</div>
+      <button
+        type="button"
+        role="menuitem"
+        className={`rb-more-item ${bookmarked ? "is-on" : ""}`}
+        onClick={() => {
+          void toggleBookmark(page);
+          closeMore();
+        }}
+      >
+        <IconBookmark filled={bookmarked} size={18} />
+        {bookmarked ? t("removeBookmark", locale) : t("addBookmark", locale)}
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        className="rb-more-item"
+        onClick={() => {
+          togglePanel("notes");
+          closeMore();
+        }}
+      >
+        <IconNotes size={18} />
+        {t("sidebar", locale)}
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        className="rb-more-item"
+        onClick={() => {
+          closeMore();
+          setViewOpen(true);
+        }}
+      >
+        <IconView size={18} />
+        {t("barView", locale)}
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        className="rb-more-item"
+        onClick={() => {
+          togglePanel("chat");
+          closeMore();
+        }}
+      >
+        <IconSparkles size={18} />
+        {t("barAi", locale)}
+      </button>
+    </div>
+  );
+
+  const drawTray = (
+    <div className="reader-markup-tray reader-bar-tools" role="toolbar" aria-label={t("barDrawing", locale)}>
+      <span className="rb-tray-title">{t("barDrawing", locale)}</span>
       {toolBtn("select", t("selectTool", locale))}
       {toolBtn("pen", t("pencil", locale))}
       {format === "pdf" && toolBtn("type", t("typeTool", locale))}
@@ -394,9 +578,7 @@ export function ReaderToolbar({ title, pageCount, bookId, format }: Props) {
               <button
                 key={font.id}
                 type="button"
-                className={`font-chip font-${font.id} ${
-                  textFont === font.id ? "is-on" : ""
-                }`}
+                className={`font-chip font-${font.id} ${textFont === font.id ? "is-on" : ""}`}
                 style={{ fontFamily: EPUB_FONT_STACKS[font.id] }}
                 onClick={() => setTextFont(font.id)}
                 title={t(font.key, locale)}
@@ -432,93 +614,122 @@ export function ReaderToolbar({ title, pageCount, bookId, format }: Props) {
       )}
 
       {tool !== "select" && (
-        <button
-          type="button"
-          className="btn-ghost compact"
-          onClick={() => void clearPageInk(page)}
-        >
+        <button type="button" className="btn-ghost compact" onClick={() => void clearPageInk(page)}>
           {t("clearInk", locale)}
         </button>
       )}
 
       <button
         type="button"
-        className="btn-ghost compact"
-        disabled={!selection?.text}
-        onClick={() => void runTranslateSelection()}
+        className="btn-primary compact rb-tray-done"
+        onClick={() => {
+          setTool("select");
+          setDrawOpen(false);
+        }}
       >
-        {t("translate", locale)}
+        <IconCheck size={16} /> {t("barDone", locale)}
       </button>
     </div>
   );
 
   return (
     <>
-      <header className="reader-bar reader-chrome-top">
-        <div className="reader-bar-nav">
-          <div className="reader-bar-start">
-            <Link href="/" className="back-link">
-              {t("backToShelf", locale)}
-            </Link>
-            <div className="reader-title" title={title}>
+      <header className="reader-bar reader-chrome-top rb">
+        <div className="rb-row">
+          <Link href="/" className="rb-btn rb-back" title={t("backToShelf", locale)}>
+            <IconBack />
+            <span className="rb-btn-label">{t("barShelf", locale)}</span>
+          </Link>
+
+          <div className="rb-where">
+            <div className="rb-title" title={title}>
               {title}
             </div>
+            <PageLine format={format} pageCount={pageCount} />
           </div>
-          <ReaderPager format={format} pageCount={pageCount} />
-          <div className="reader-chrome-dock">
-            <button
-              type="button"
-              className={`reader-icon-btn reader-bookmark-btn ${bookmarked ? "is-on" : ""}`}
-              onClick={() => void toggleBookmark(page)}
-              title={bookmarked ? t("removeBookmark", locale) : t("addBookmark", locale)}
-              aria-label={bookmarked ? t("removeBookmark", locale) : t("addBookmark", locale)}
-            >
-              {bookmarked ? "★" : "☆"}
-            </button>
-            <button
-              type="button"
-              ref={appearanceBtn}
-              className={`reader-icon-btn ${appearanceOpen ? "is-on" : ""}`}
-              onClick={() => setAppearanceOpen((v) => !v)}
-              title={t("appearance", locale)}
-              aria-label={t("appearance", locale)}
-            >
-              ◐
-            </button>
-            {format === "epub" && <EpubTypePanel />}
-            {format === "pdf" && <MarginPanel />}
-            <button
-              type="button"
-              className={`reader-icon-btn ${markupOpen || tool !== "select" ? "is-on" : ""}`}
-              onClick={() => setMarkupOpen((v) => !v)}
-              title={t("markup", locale)}
-              aria-label={t("markup", locale)}
-            >
-              ✎
-            </button>
-            <button
-              type="button"
-              ref={searchBtn}
-              className={`reader-icon-btn ${searchOpen ? "is-on" : ""}`}
-              onClick={() => setSearchOpen((v) => !v)}
-              title={t("search", locale)}
-              aria-label={t("search", locale)}
-            >
-              ⌕
-            </button>
-            {panelBtn("toc", t("toc", locale), "☰")}
-            {panelBtn("notes", t("sidebar", locale), "¶")}
-            {panelBtn("chat", t("chat", locale), "💬")}
+
+          <div className="rb-actions">
+            <div className="rb-group">
+              <BarButton
+                icon={<IconToc />}
+                label={t("toc", locale)}
+                on={panelOn("toc")}
+                onClick={() => togglePanel("toc")}
+              />
+              <BarButton
+                icon={<IconSearch />}
+                label={t("search", locale)}
+                on={searchOpen}
+                onClick={() => setSearchOpen((v) => !v)}
+                buttonRef={searchBtn}
+              />
+            </div>
+
+            <div className="rb-group rb-collapsible">{zoom}</div>
+
+            <div className="rb-group">
+              <BarButton
+                className="rb-collapsible"
+                icon={<IconBookmark filled={bookmarked} />}
+                label={bookmarked ? t("removeBookmark", locale) : t("addBookmark", locale)}
+                on={bookmarked}
+                onClick={() => void toggleBookmark(page)}
+              />
+              <BarButton
+                icon={<IconPencil />}
+                label={t("barDraw", locale)}
+                on={drawing}
+                onClick={() => {
+                  if (drawing) {
+                    setTool("select");
+                    setDrawOpen(false);
+                  } else {
+                    setDrawOpen(true);
+                  }
+                }}
+              />
+              <BarButton
+                className="rb-collapsible"
+                icon={<IconNotes />}
+                label={t("sidebar", locale)}
+                on={panelOn("notes")}
+                onClick={() => togglePanel("notes")}
+              />
+            </div>
+
+            <div className="rb-group">
+              <BarButton
+                className="rb-collapsible"
+                icon={<IconView />}
+                label={t("barView", locale)}
+                on={viewOpen}
+                onClick={() => setViewOpen((v) => !v)}
+                buttonRef={viewBtn}
+              />
+              <BarButton
+                className="rb-collapsible"
+                icon={<IconSparkles />}
+                label={t("barAi", locale)}
+                on={panelOn("chat")}
+                onClick={() => togglePanel("chat")}
+              />
+              <BarButton
+                className="rb-more-btn"
+                icon={<IconMore />}
+                label={t("barMore", locale)}
+                on={moreOpen}
+                onClick={() => setMoreOpen((v) => !v)}
+                buttonRef={moreBtn}
+              />
+            </div>
           </div>
         </div>
-        {markupOpen && markup}
+        <ProgressStrip format={format} pageCount={pageCount} />
+        {drawing && drawTray}
       </header>
-      {appearanceOpen &&
-        typeof document !== "undefined" &&
-        createPortal(appearancePanel, document.body)}
-      {searchOpen &&
-        typeof document !== "undefined" &&
-        createPortal(searchPanel, document.body)}
+      {viewOpen && typeof document !== "undefined" && createPortal(viewPanel, document.body)}
+      {searchOpen && typeof document !== "undefined" && createPortal(searchPanel, document.body)}
+      {moreOpen && typeof document !== "undefined" && createPortal(moreMenu, document.body)}
     </>
   );
 }

@@ -7840,3 +7840,349 @@ html[data-theme="night"] .add-book-sheet {
     transform: none;
   }
 }
+
+/* ===================== Reader bar (rb) ===================== */
+.reader-bar.rb {
+  gap: 0;
+  padding: 0.3rem 0.7rem 0.35rem;
+  padding-top: max(0.3rem, env(safe-area-inset-top));
+}
+
+.rb-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 2.9rem;
+}
+
+.rb-btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.12rem;
+  min-width: 2.6rem;
+  height: 2.7rem;
+  padding: 0.2rem 0.45rem;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.rb-btn:hover {
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+
+.rb-btn.is-on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.rb-btn-label {
+  font-size: 0.66rem;
+  line-height: 1;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--ink-soft);
+}
+
+.rb-btn.is-on .rb-btn-label {
+  color: var(--accent);
+}
+
+.rb-back {
+  flex-shrink: 0;
+}
+
+.rb-where {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 0.05rem;
+}
+
+.rb-title {
+  font-weight: 650;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rb-page {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.rb-page-text {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.15rem;
+}
+
+.rb-page-input {
+  padding: 0 0.2rem;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.rb-page-input:hover {
+  border-color: var(--line);
+}
+
+.rb-page-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--paper);
+}
+
+.rb-page-printed,
+.rb-page-pct {
+  opacity: 0.85;
+}
+
+.rb-step {
+  display: inline-grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.rb-step:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.rb-step:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.rb-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.rb-group {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+/* A hairline between groups: find | zoom | mark | view. */
+.rb-group + .rb-group {
+  margin-left: 0.4rem;
+  padding-left: 0.4rem;
+  border-left: 1px solid var(--line);
+}
+
+.rb-zoom {
+  display: flex;
+  align-items: center;
+  gap: 0.05rem;
+}
+
+.rb-zoom-pct {
+  min-width: 3.1rem;
+  padding: 0.2rem 0.25rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.rb-zoom-pct:hover {
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+
+/* Progress along the bottom edge; a scrubber for PDF. */
+.rb-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 3px;
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  transition: height 0.15s ease;
+}
+
+.rb-progress > div {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 0 2px 2px 0;
+}
+
+.rb-progress.is-scrub {
+  cursor: pointer;
+  touch-action: none;
+}
+
+.rb-progress.is-scrub::before {
+  content: "";
+  position: absolute;
+  inset: -7px 0;
+}
+
+.rb-progress.is-scrub:hover,
+.rb-progress.is-scrub:active {
+  height: 6px;
+}
+
+.rb-progress-tip {
+  position: absolute;
+  top: 10px;
+  transform: translateX(-50%);
+  padding: 0.15rem 0.45rem;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 0.72rem;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.rb-more-btn {
+  display: none;
+}
+
+/* Drawing row: a title, the tools, and an unmistakable way out. */
+.rb .reader-markup-tray {
+  margin-top: 0.35rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--line);
+}
+
+.rb-tray-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+  margin-right: 0.2rem;
+}
+
+.rb-tray-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: auto;
+}
+
+/* View panel: theme, toggles, then margins or typography. */
+.reader-view-panel {
+  width: min(330px, calc(100vw - 16px));
+  display: grid;
+  gap: 0.75rem;
+}
+
+.view-section {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.view-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.view-heading {
+  margin-top: 0.15rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--line);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.reader-more-menu {
+  width: 230px;
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.4rem;
+}
+
+.rb-more-zoom {
+  display: flex;
+  justify-content: center;
+  padding: 0.2rem 0 0.35rem;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 0.2rem;
+}
+
+.rb-more-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.6rem;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rb-more-item:hover {
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+
+.rb-more-item.is-on {
+  color: var(--accent);
+}
+
+/* Narrower screens: icons only. */
+@media (max-width: 1180px) {
+  .rb .rb-btn-label {
+    display: none;
+  }
+  .rb-btn {
+    height: 2.4rem;
+    min-width: 2.4rem;
+  }
+}
+
+/* Phones: keep where-am-I, contents, search and draw; the rest in More. */
+@media (max-width: 720px) {
+  .rb .rb-collapsible {
+    display: none;
+  }
+  .rb .rb-more-btn {
+    display: inline-flex;
+  }
+  .rb .rb-page-pct,
+  .rb .rb-page-printed {
+    display: none;
+  }
+  .rb-row {
+    gap: 0.35rem;
+  }
+}
