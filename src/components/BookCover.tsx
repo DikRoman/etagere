@@ -559,8 +559,8 @@ export function BookCover({ book, index, part = "cover" }: BookCoverProps) {
         <div className="book-copy">
           <p className="book-title">{book.title}</p>
           <p className="book-meta">
-            {book.author || t("unknownAuthor", locale)}
-            {isNew ? ` · ${t("newBadge", locale)}` : ` · ${progress}%`}
+            {book.author ? `${book.author} · ` : ""}
+            {isNew ? t("newBadge", locale) : `${progress}%`}
           </p>
         </div>
         <button

@@ -214,7 +214,6 @@ const dict = {
   },
   settings: { ru: "Настройки", en: "Settings" },
   language: { ru: "Язык", en: "Language" },
-  unknownAuthor: { ru: "Без автора", en: "Unknown author" },
   close: { ru: "Закрыть", en: "Close" },
   copy: { ru: "Копировать", en: "Copy" },
   notePlaceholder: {

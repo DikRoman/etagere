@@ -31,9 +31,9 @@ export function ReadingNow({ books }: { books: BookMeta[] }) {
         <div className="reading-now-copy">
           <p className="reading-now-kicker">{t("currentlyReading", locale)}</p>
           <h2>{hero.title}</h2>
-          <p className="reading-now-author">
-            {hero.author || t("unknownAuthor", locale)}
-          </p>
+          {hero.author ? (
+            <p className="reading-now-author">{hero.author}</p>
+          ) : null}
           <div className="reading-now-progress">
             <span style={{ width: `${progress}%` }} />
           </div>
