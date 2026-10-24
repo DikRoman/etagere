@@ -4,13 +4,48 @@ import {
   backupToCloudDisks,
   bookFileName,
   bookMime,
-  downloadCloudPick,
   downloadFromCloudDisks,
   listCloudBooks,
   type CloudPick,
 } from "@/lib/cloud/disks";
 import { connectedProviders, type CloudProvider } from "@/lib/cloud/session";
-import { ensureDriveToken, isDriveConnected } from "@/lib/storage/drive";
+import { coverFromStoredFile, isUsableCover } from "@/lib/book-cover";
+import { extractCoverDataUrl, loadPdf } from "@/lib/pdf";
+
+/**
+ * A book that arrived as metadata only — from another device, or listed off a
+ * disk — may lack a cover and an accurate page count. Read both from the file
+ * once it is here; the reader sizes the PDF by pageCount, so a stub's
+ * placeholder of 1 would otherwise show a single page.
+ */
+async function metaFromFile(book: BookMeta): Promise<Partial<BookMeta>> {
+  const patch: Partial<BookMeta> = {};
+  const needCover = !isUsableCover(book.coverDataUrl);
+  try {
+    if (book.format === "pdf") {
+      const blob = await local.getPdfBlob(book.id);
+      if (!blob) return patch;
+      const pdf = await loadPdf(await blob.arrayBuffer());
+      try {
+        if (pdf.numPages && pdf.numPages !== book.pageCount) {
+          patch.pageCount = pdf.numPages;
+        }
+        if (needCover) {
+          const cover = await extractCoverDataUrl(pdf);
+          if (cover) patch.coverDataUrl = cover;
+        }
+      } finally {
+        await pdf.cleanup();
+      }
+    } else if (needCover) {
+      const cover = await coverFromStoredFile(book);
+      if (cover) patch.coverDataUrl = cover;
+    }
+  } catch (e) {
+    console.warn("[etagere] read meta from file", book.id, e);
+  }
+  return patch;
+}
 
 export async function ensureLocalBookFile(book: BookMeta): Promise<boolean> {
   if (await local.hasLocalBookFile(book.id)) {
@@ -27,7 +62,7 @@ export async function ensureLocalBookFile(book: BookMeta): Promise<boolean> {
     type: got.blob.type || bookMime(book),
   });
   await local.savePdfBlob(book.id, file);
-  await local.saveBook({
+  const saved: BookMeta = {
     ...book,
     missingLocalFile: false,
     hasCloudFile: true,
@@ -36,7 +71,8 @@ export async function ensureLocalBookFile(book: BookMeta): Promise<boolean> {
     driveFileId:
       got.provider === "gdrive" ? got.fileId : book.driveFileId,
     sizeBytes: got.blob.size || book.sizeBytes,
-  });
+  };
+  await local.saveBook({ ...saved, ...(await metaFromFile(saved)) });
   return true;
 }
 
@@ -55,73 +91,11 @@ export async function backupBookFile(book: BookMeta): Promise<BookMeta> {
   return next;
 }
 
-async function pool<T>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<void>,
-): Promise<void> {
-  if (!items.length) return;
-  let i = 0;
-  await Promise.all(
-    Array.from({ length: Math.min(limit, items.length) }, async () => {
-      while (i < items.length) {
-        const item = items[i++];
-        if (item !== undefined) await fn(item);
-      }
-    }),
-  );
-}
-
-/** Files pulled back per sync; the rest restore lazily when opened. */
-const RESTORE_BATCH = 25;
-
 export type FileRestoreProgress = {
   done: number;
   total: number;
   title?: string;
 };
-
-export async function restoreMissingBookFiles(
-  onProgress?: (p: FileRestoreProgress) => void,
-  shouldStop?: () => boolean,
-): Promise<number> {
-  const books = await local.listBooks();
-  const missing: BookMeta[] = [];
-  for (const book of books) {
-    if (await local.hasLocalBookFile(book.id)) continue;
-    if (!local.hasCloudBookCopy(book)) continue;
-    missing.push(book);
-  }
-  // Most recently opened first, so a big library restores what matters now.
-  // The rest come back on open, which no longer needs a fresh sign-in.
-  missing.sort(
-    (a, b) => Date.parse(b.openedAt ?? "") - Date.parse(a.openedAt ?? ""),
-  );
-  missing.splice(RESTORE_BATCH);
-  const total = missing.length;
-  onProgress?.({ done: 0, total });
-  if (!total) return 0;
-  const needsDrive = missing.some(
-    (b) => b.cloudProvider === "gdrive" || Boolean(b.driveFileId),
-  );
-  if (needsDrive && isDriveConnected()) {
-    await ensureDriveToken().catch(() => undefined);
-  }
-  let n = 0;
-  let completed = 0;
-  await pool(missing, 2, async (book) => {
-    if (shouldStop?.()) return;
-    onProgress?.({ done: completed, total, title: book.title });
-    try {
-      if (await ensureLocalBookFile(book)) n += 1;
-    } catch (e) {
-      console.warn("[etagere] restore file", book.id, e);
-    }
-    completed += 1;
-    onProgress?.({ done: completed, total, title: book.title });
-  });
-  return n;
-}
 
 export async function recoverBooksFromConnectedDisks(
   onProgress?: (p: FileRestoreProgress) => void,
@@ -154,7 +128,9 @@ export async function recoverBooksFromConnectedDisks(
     if (shouldStop?.()) break;
     onProgress?.({ done: n, total, title: pick.name });
     try {
-      const file = await downloadCloudPick(provider, pick);
+      // Only a card is created here; the file is fetched when the book is
+      // opened. Downloading every file on a disk is what made an empty
+      // library pull down the whole collection at once.
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       const format = pick.name.toLowerCase().endsWith(".epub")
@@ -169,18 +145,16 @@ export async function recoverBooksFromConnectedDisks(
         lastPage: 1,
         addedAt: now,
         updatedAt: now,
-        sizeBytes: file.size,
+        sizeBytes: 0,
         tags: [],
         collectionIds: [],
         readingStatus: "none",
-        missingLocalFile: false,
+        missingLocalFile: true,
         hasCloudFile: true,
         cloudProvider: provider,
         cloudFileId: pick.id,
         driveFileId: provider === "gdrive" ? pick.id : undefined,
-        openedAt: now,
       };
-      await local.savePdfBlob(id, file);
       await local.saveBook(book);
       n += 1;
       onProgress?.({ done: n, total, title: pick.name });

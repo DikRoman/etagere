@@ -134,6 +134,7 @@ interface LibraryStore {
   setDropTargetCollectionId: (id: string | null) => void;
   setReadingStatus: (bookId: string, status: ReadingStatus) => Promise<void>;
   restoreCover: (bookId: string) => Promise<void>;
+  refreshCover: (bookId: string) => Promise<boolean>;
   downloadBookFromCloud: (bookId: string) => Promise<boolean>;
   connectDrive: () => Promise<string>;
   refreshDriveFlag: () => void;
@@ -550,6 +551,20 @@ export const useLibraryStore = create<LibraryStore>((set, get) => ({
     set({
       books: get().books.map((b) => (b.id === bookId ? next : b)),
     });
+  },
+
+  refreshCover: async (bookId) => {
+    const book = get().books.find((b) => b.id === bookId);
+    if (!book || book.missingLocalFile) return false;
+    const coverDataUrl = await coverFromStoredFile(book);
+    if (!coverDataUrl) return false;
+    // coverPending makes the next push replace the copy on the server, so
+    // other devices pick up the new cover too.
+    const next = { ...book, coverDataUrl, coverPending: true };
+    await local.saveBook(next);
+    set({ books: get().books.map((b) => (b.id === bookId ? next : b)) });
+    scheduleSync(bookId);
+    return true;
   },
 
   downloadBookFromCloud: async (bookId) => {

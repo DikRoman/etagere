@@ -7,10 +7,8 @@ import type {
   ReadingStatus,
 } from "@/lib/types";
 import * as local from "@/lib/storage/local";
-import {
-  recoverBooksFromConnectedDisks,
-  restoreMissingBookFiles,
-} from "@/lib/sync/book-file";
+import { isUsableCover } from "@/lib/book-cover";
+import { recoverBooksFromConnectedDisks } from "@/lib/sync/book-file";
 
 export type SyncStatus = "idle" | "syncing" | "ok" | "error" | "offline";
 
@@ -111,6 +109,8 @@ type CloudBook = RecordModel & {
   meta_updated_at?: string;
   cloud_provider?: string;
   cloud_file_id?: string;
+  /** Filename of the small cover image stored with the record. */
+  cover?: string;
 };
 
 type CloudCollection = RecordModel & {
@@ -244,6 +244,65 @@ async function findCloudBook(
   }
 }
 
+/**
+ * Covers travel with the record, so another device can show the shelf
+ * without downloading any book file. Uploaded once; replaced only when the
+ * cover was regenerated on this device.
+ */
+async function pushCover(cloud: CloudBook, book: BookMeta): Promise<void> {
+  if (!isUsableCover(book.coverDataUrl)) return;
+  if (cloud.cover && !book.coverPending) return;
+  try {
+    const blob = await (await fetch(book.coverDataUrl!)).blob();
+    const ext = blob.type.includes("png") ? "png" : "jpg";
+    const form = new FormData();
+    form.append(
+      "cover",
+      new File([blob], `cover.${ext}`, { type: blob.type || "image/jpeg" }),
+    );
+    await getPb().collection("books").update(cloud.id, form);
+    if (book.coverPending) {
+      const latest = (await local.getBook(book.id)) ?? book;
+      await local.saveBook({ ...latest, coverPending: false });
+    }
+  } catch (e) {
+    console.warn("[library-sync] cover upload", book.id, e);
+  }
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+let fileToken: Promise<string> | null = null;
+
+/** Fetch the server cover for a book that has none on this device. */
+async function pullCover(row: CloudBook, book: BookMeta): Promise<BookMeta> {
+  if (!row.cover || isUsableCover(book.coverDataUrl)) return book;
+  try {
+    const pb = getPb();
+    // A file token keeps this working if the field is ever made protected.
+    fileToken ??= pb.files.getToken().catch(() => "");
+    const token = await fileToken;
+    const url = pb.files.getURL(row, row.cover, token ? { token } : {});
+    const res = await fetch(url);
+    if (!res.ok) return book;
+    const coverDataUrl = await blobToDataUrl(await res.blob());
+    if (!isUsableCover(coverDataUrl)) return book;
+    const next = { ...book, coverDataUrl };
+    await local.saveBook(next);
+    return next;
+  } catch (e) {
+    console.warn("[library-sync] cover download", book.id, e);
+    return book;
+  }
+}
+
 export async function pushBook(bookId: string): Promise<void> {
   const userId = authedUserId();
   if (!userId) return;
@@ -274,6 +333,7 @@ export async function pushBook(bookId: string): Promise<void> {
       if (!book.cloudId) {
         await local.saveBook({ ...book, cloudId: existing.id });
       }
+      await pushCover(existing, book);
       const ann = await local.getAnnotations(bookId);
       await pushAnnotationsForCloudBook(
         userId,
@@ -304,6 +364,7 @@ export async function pushBook(bookId: string): Promise<void> {
     ),
   });
 
+  await pushCover(cloud, (await local.getBook(bookId)) ?? book);
   const ann = await local.getAnnotations(bookId);
   await pushAnnotationsForCloudBook(userId, cloud.id, ann, book.updatedAt);
 }
@@ -409,6 +470,7 @@ export async function pullAndMerge(): Promise<void> {
   if (syncInFlight) return syncInFlight;
 
   cancelRequested = false;
+  fileToken = null;
   syncInFlight = (async () => {
     setStatus("syncing");
     setProgress({ phase: "catalog", done: 0, total: 0 });
@@ -507,6 +569,8 @@ export async function pullAndMerge(): Promise<void> {
           match = patch;
         }
 
+        match = await pullCover(row, match);
+
         // Annotations
         try {
           const annRow = (await pb
@@ -550,11 +614,10 @@ export async function pullAndMerge(): Promise<void> {
         await pushBook(book.id);
       }
       checkpoint();
-      setProgress({ phase: "files", done: 0, total: 0 });
+      // Book files are not downloaded here any more. The shelf needs only
+      // metadata and covers; a file comes down when the book is opened, or
+      // from "Download from cloud" in the cover menu.
       await local.evictStaleBookFiles();
-      await restoreMissingBookFiles((p) => {
-        setProgress({ phase: "files", ...p });
-      }, stopRequested);
       checkpoint();
       const afterRestore = await local.listBooks();
       if (afterRestore.length === 0 && cloudBooks.length === 0) {

@@ -73,6 +73,7 @@ const dict = {
     ru: "Подчёркивать слова, которые уже есть в твоём словаре",
     en: "Underline words already in your vocabulary",
   },
+  refreshCover: { ru: "Обновить обложку", en: "Refresh cover" },
   downloadFromCloud: {
     ru: "Загрузить из облака",
     en: "Download from cloud",

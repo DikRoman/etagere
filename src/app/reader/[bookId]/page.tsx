@@ -107,7 +107,13 @@ export default function ReaderPage() {
         const fresh = await getBook(meta.id);
         setBookMeta(fresh ?? { ...meta, missingLocalFile: false });
         void useLibraryStore.getState().hydrate();
-        await setBook(meta.id, meta.lastPage || 1, meta.pageCount);
+        // The download reads the real page count from the file; a book that
+        // arrived as a card only had a placeholder.
+        await setBook(
+          meta.id,
+          meta.lastPage || 1,
+          fresh?.pageCount ?? meta.pageCount,
+        );
         void touchBookOpened(meta.id);
         return;
       }

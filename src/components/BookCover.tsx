@@ -82,6 +82,7 @@ export function BookCover({ book, index, part = "cover" }: BookCoverProps) {
   const toggleBookCollection = useLibraryStore((s) => s.toggleBookCollection);
   const setReadingStatus = useLibraryStore((s) => s.setReadingStatus);
   const downloadBookFromCloud = useLibraryStore((s) => s.downloadBookFromCloud);
+  const refreshCover = useLibraryStore((s) => s.refreshCover);
   const draggingBookId = useLibraryStore((s) => s.draggingBookId);
   const selectMode = useLibraryStore((s) => s.selectMode);
   const selected = useLibraryStore((s) => s.selectedBookIds.includes(book.id));
@@ -387,6 +388,21 @@ export function BookCover({ book, index, part = "cover" }: BookCoverProps) {
             ? t("unmarkFinished", locale)
             : t("markFinished", locale)}
         </button>
+        {!book.missingLocalFile && (
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setMenuOpen(false);
+              void refreshCover(book.id);
+            }}
+          >
+            <span className="book-menu-ico" aria-hidden>
+              ↻
+            </span>
+            {t("refreshCover", locale)}
+          </button>
+        )}
         {book.missingLocalFile &&
           (book.hasCloudFile || book.driveFileId || book.cloudFileId) && (
             <>

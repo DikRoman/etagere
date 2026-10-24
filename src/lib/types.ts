@@ -243,6 +243,8 @@ export interface BookMeta {
   updatedAt: string;
   /** Last time this device opened the reader. Local cache only. */
   openedAt?: string;
+  /** Cover was regenerated locally and must replace the server copy. */
+  coverPending?: boolean;
   sizeBytes: number;
   tags: string[];
   collectionIds: string[];
