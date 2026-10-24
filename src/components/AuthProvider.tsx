@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useAuthStore } from "@/store/auth";
 import { useLibraryStore } from "@/store/library";
 import { runFullSync } from "@/lib/sync/library-sync";
+import { syncVocab } from "@/lib/sync/vocab-sync";
 import {
   clearLegacyDriveSession,
   refreshCloudSessions,
@@ -51,6 +52,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await refreshCloudSessions();
       await keepDriveAlive();
       await runFullSync();
+      // Vocabulary is small and independent of the shelf; sync it after.
+      await syncVocab();
       if (!cancelled) await libraryHydrate();
     })();
     return () => {

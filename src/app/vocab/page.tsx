@@ -24,6 +24,7 @@ import {
   type VocabEntry,
   type VocabGrade,
 } from "@/lib/vocab";
+import { syncVocab } from "@/lib/sync/vocab-sync";
 
 const GRADE_KEYS = {
   again: "vocabAgain",
@@ -53,17 +54,23 @@ export default function VocabPage() {
     if (ready && !user) router.replace("/login");
   }, [ready, user, router]);
 
+  // Show what this browser has at once, then merge in the server's copy.
   useEffect(() => {
+    if (!user) return;
     let cancelled = false;
-    void listVocabEntries().then((entries) => {
+    void (async () => {
+      const first = await listVocabEntries();
       if (cancelled) return;
-      setRows(entries);
+      setRows(first);
       setLoading(false);
-    });
+      await syncVocab();
+      if (cancelled) return;
+      setRows(await listVocabEntries());
+    })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [user]);
 
   const due = useMemo(() => dueVocabEntries(rows), [rows]);
   const stats = useMemo(() => vocabStudyStats(rows), [rows]);

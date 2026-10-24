@@ -1,4 +1,7 @@
-/** Local vocabulary with Anki-style SM-2 spaced repetition. */
+/** Vocabulary with Anki-style SM-2 spaced repetition, kept per account in
+ * IndexedDB and mirrored to PocketBase by src/lib/sync/vocab-sync.ts. */
+
+import { getPb } from "@/lib/pb";
 
 export interface VocabEntry {
   id: string;
@@ -32,8 +35,31 @@ export type VocabGrade = "again" | "hard" | "good" | "easy";
 
 export const VOCAB_GRADES: VocabGrade[] = ["again", "hard", "good", "easy"];
 
-const DB_NAME = "etagere-vocab";
+/** The store used before vocab was per account; adopted once on sign-in. */
+export const LEGACY_VOCAB_DB = "etagere-vocab";
 const DB_VERSION = 1;
+
+function signedInUserId(): string | null {
+  if (typeof window === "undefined") return null;
+  const auth = getPb().authStore;
+  return auth.isValid ? (auth.record?.id ?? null) : null;
+}
+
+/**
+ * Each account gets its own store, so two accounts in one browser never mix
+ * their cards — and one account's words are never uploaded into another.
+ */
+export function vocabDbName(userId = signedInUserId()): string {
+  return userId ? `${LEGACY_VOCAB_DB}-${userId}` : LEGACY_VOCAB_DB;
+}
+
+/** Notified on every local write, so sync can push it. */
+type VocabWriteHook = (id: string, kind: "put" | "delete") => void;
+let writeHook: VocabWriteHook | null = null;
+
+export function setVocabWriteHook(hook: VocabWriteHook | null): void {
+  writeHook = hook;
+}
 const STORE = "entries";
 const MAX_BOX = 5;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -59,9 +85,9 @@ export const SESSION_REINSERT_MS = 20 * 60 * 1000;
 
 const LEGACY_INTERVAL_DAYS = [0, 0.5, 1, 3, 7, 21];
 
-function openDb(): Promise<IDBDatabase> {
+function openDb(name = vocabDbName()): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    const req = indexedDB.open(name, DB_VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE)) {
@@ -435,14 +461,54 @@ export function normalizeVocab(row: Partial<VocabEntry> & Pick<VocabEntry, "id" 
   };
 }
 
-async function putEntry(entry: VocabEntry): Promise<VocabEntry> {
-  const db = await openDb();
+async function writeEntries(
+  entries: VocabEntry[],
+  dbName = vocabDbName(),
+): Promise<void> {
+  if (!entries.length) return;
+  const db = await openDb(dbName);
   const tx = db.transaction(STORE, "readwrite");
-  tx.objectStore(STORE).put(entry);
+  for (const entry of entries) tx.objectStore(STORE).put(entry);
   await txDone(tx);
   db.close();
   invalidateKnownWords();
+}
+
+async function putEntry(entry: VocabEntry): Promise<VocabEntry> {
+  await writeEntries([entry]);
+  writeHook?.(entry.id, "put");
   return entry;
+}
+
+/** Sync's write path: no hook, so pulled cards are not pushed straight back. */
+export async function putVocabEntriesRaw(
+  entries: VocabEntry[],
+  dbName?: string,
+): Promise<void> {
+  await writeEntries(entries, dbName);
+}
+
+export async function deleteVocabEntriesRaw(ids: string[]): Promise<void> {
+  if (!ids.length) return;
+  const db = await openDb();
+  const tx = db.transaction(STORE, "readwrite");
+  for (const id of ids) tx.objectStore(STORE).delete(id);
+  await txDone(tx);
+  db.close();
+  invalidateKnownWords();
+}
+
+export async function getVocabEntry(id: string): Promise<VocabEntry | null> {
+  const db = await openDb();
+  const tx = db.transaction(STORE, "readonly");
+  const req = tx.objectStore(STORE).get(id);
+  const row = await new Promise<VocabEntry | undefined>((resolve, reject) => {
+    req.onsuccess = () => resolve(req.result as VocabEntry | undefined);
+    req.onerror = () => reject(req.error);
+  });
+  await txDone(tx);
+  db.close();
+  return row ? normalizeVocab(row) : null;
 }
 
 export async function findVocabEntry(
@@ -514,11 +580,13 @@ export async function addVocabEntry(
 }
 
 let knownWordsCache: Set<string> | null = null;
+let knownWordsDb: string | null = null;
 const knownWordsListeners = new Set<() => void>();
 
 /** Every word and lemma in the vocabulary, normalized, for marking text. */
 export async function loadKnownWords(): Promise<Set<string>> {
-  if (knownWordsCache) return knownWordsCache;
+  const db = vocabDbName();
+  if (knownWordsCache && knownWordsDb === db) return knownWordsCache;
   const rows = await listVocabEntries();
   const set = new Set<string>();
   for (const row of rows) {
@@ -530,6 +598,7 @@ export async function loadKnownWords(): Promise<Set<string>> {
     }
   }
   knownWordsCache = set;
+  knownWordsDb = db;
   return set;
 }
 
@@ -548,8 +617,10 @@ export function subscribeKnownWords(fn: () => void): () => void {
   return () => knownWordsListeners.delete(fn);
 }
 
-export async function listVocabEntries(): Promise<VocabEntry[]> {
-  const db = await openDb();
+export async function listVocabEntries(
+  dbName?: string,
+): Promise<VocabEntry[]> {
+  const db = await openDb(dbName);
   const tx = db.transaction(STORE, "readonly");
   const req = tx.objectStore(STORE).getAll();
   const rows = await new Promise<VocabEntry[]>((resolve, reject) => {
@@ -565,12 +636,8 @@ export async function listVocabEntries(): Promise<VocabEntry[]> {
 }
 
 export async function deleteVocabEntry(id: string): Promise<void> {
-  const db = await openDb();
-  const tx = db.transaction(STORE, "readwrite");
-  tx.objectStore(STORE).delete(id);
-  await txDone(tx);
-  db.close();
-  invalidateKnownWords();
+  await deleteVocabEntriesRaw([id]);
+  writeHook?.(id, "delete");
 }
 
 export function isVocabDue(entry: VocabEntry, at = new Date()): boolean {
