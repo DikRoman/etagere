@@ -30,23 +30,48 @@ let status: SyncStatus = "idle";
 let lastError: string | undefined;
 let progress: SyncProgress = null;
 let syncInFlight: Promise<void> | null = null;
-let cancelRequested = false;
+let pushInFlight: Promise<void> | null = null;
 
-/** Ask the running sync to stop at the next checkpoint. */
+/**
+ * Cancelling bumps the generation. A job remembers the generation it started
+ * in; once that is stale its status updates are dropped and its next
+ * checkpoint unwinds it. Requests in flight are aborted outright, so the
+ * button takes effect at once rather than at the next unit of work.
+ */
+let generation = 0;
+let controller = new AbortController();
+
+function isStale(gen: number): boolean {
+  return gen !== generation;
+}
+
+/** Signal for sync requests; aborted the moment the reader cancels. */
+function currentSignal(): AbortSignal {
+  return controller.signal;
+}
+
+/** Stop the running sync or push now. */
 export function cancelSync(): void {
-  if (!syncInFlight) return;
-  cancelRequested = true;
+  if (!syncInFlight && !pushInFlight && status !== "syncing") return;
+  generation += 1;
+  controller.abort();
+  controller = new AbortController();
+  if (pushTimer) {
+    clearTimeout(pushTimer);
+    pushTimer = null;
+  }
+  // The work unwinds in the background; the line stops saying "syncing" now.
+  progress = null;
+  status = "idle";
+  lastError = undefined;
+  emit();
 }
 
-function stopRequested(): boolean {
-  return cancelRequested;
-}
-
-/** Thrown at a checkpoint to unwind the sync; handled as a clean stop. */
+/** Thrown at a checkpoint to unwind a cancelled job; a clean stop. */
 const CANCELLED = Symbol("sync-cancelled");
 
-function checkpoint(): void {
-  if (cancelRequested) throw CANCELLED;
+function checkpoint(gen: number): void {
+  if (isStale(gen)) throw CANCELLED;
 }
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
 const pendingBookIds = new Set<string | "*">();
@@ -73,14 +98,16 @@ function emit() {
   for (const l of listeners) l(status, lastError, progress);
 }
 
-function setStatus(next: SyncStatus, message?: string) {
+function setStatus(next: SyncStatus, message?: string, gen?: number) {
+  if (gen !== undefined && isStale(gen)) return;
   status = next;
   lastError = message;
   if (next !== "syncing") progress = null;
   emit();
 }
 
-function setProgress(next: NonNullable<SyncProgress>) {
+function setProgress(next: NonNullable<SyncProgress>, gen?: number) {
+  if (gen !== undefined && isStale(gen)) return;
   status = "syncing";
   progress = next;
   emit();
@@ -208,9 +235,9 @@ async function findCloudBook(
   const pb = getPb();
   if (book.cloudId) {
     try {
-      return (await pb.collection("books").getOne(book.cloudId)) as CloudBook;
-    } catch {
-      /* fall through */
+      return (await pb.collection("books").getOne(book.cloudId, { signal: currentSignal() })) as CloudBook;
+    } catch (e) {
+      if (isAbortLike(e)) throw e;
     }
   }
   if (book.contentHash) {
@@ -219,9 +246,10 @@ async function findCloudBook(
         .collection("books")
         .getFirstListItem(
           `user = "${userId}" && content_hash = "${book.contentHash}"`,
+          { signal: currentSignal() },
         )) as CloudBook;
-    } catch {
-      /* fall through */
+    } catch (e) {
+      if (isAbortLike(e)) throw e;
     }
   }
   if (book.driveFileId) {
@@ -230,16 +258,20 @@ async function findCloudBook(
         .collection("books")
         .getFirstListItem(
           `user = "${userId}" && drive_file_id = "${book.driveFileId}"`,
+          { signal: currentSignal() },
         )) as CloudBook;
-    } catch {
-      /* fall through */
+    } catch (e) {
+      if (isAbortLike(e)) throw e;
     }
   }
   try {
     return (await pb
       .collection("books")
-      .getFirstListItem(`user = "${userId}" && local_id = "${book.id}"`)) as CloudBook;
-  } catch {
+      .getFirstListItem(`user = "${userId}" && local_id = "${book.id}"`, {
+        signal: currentSignal(),
+      })) as CloudBook;
+  } catch (e) {
+    if (isAbortLike(e)) throw e;
     return null;
   }
 }
@@ -260,7 +292,9 @@ async function pushCover(cloud: CloudBook, book: BookMeta): Promise<void> {
       "cover",
       new File([blob], `cover.${ext}`, { type: blob.type || "image/jpeg" }),
     );
-    await getPb().collection("books").update(cloud.id, form);
+    await getPb()
+      .collection("books")
+      .update(cloud.id, form, { signal: currentSignal() });
     if (book.coverPending) {
       const latest = (await local.getBook(book.id)) ?? book;
       await local.saveBook({ ...latest, coverPending: false });
@@ -290,7 +324,7 @@ async function pullCover(row: CloudBook, book: BookMeta): Promise<BookMeta> {
     fileToken ??= pb.files.getToken().catch(() => "");
     const token = await fileToken;
     const url = pb.files.getURL(row, row.cover, token ? { token } : {});
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: currentSignal() });
     if (!res.ok) return book;
     const coverDataUrl = await blobToDataUrl(await res.blob());
     if (!isUsableCover(coverDataUrl)) return book;
@@ -328,7 +362,9 @@ export async function pushBook(bookId: string): Promise<void> {
         diskPatch.drive_file_id !== (existing.drive_file_id || "") ||
         diskPatch.cloud_file_id !== (existing.cloud_file_id || "")
       ) {
-        await pb.collection("books").update(existing.id, diskPatch);
+        await pb
+          .collection("books")
+          .update(existing.id, diskPatch, { signal: currentSignal() });
       }
       if (!book.cloudId) {
         await local.saveBook({ ...book, cloudId: existing.id });
@@ -343,9 +379,13 @@ export async function pushBook(bookId: string): Promise<void> {
       );
       return;
     }
-    cloud = (await pb.collection("books").update(existing.id, payload)) as CloudBook;
+    cloud = (await pb
+      .collection("books")
+      .update(existing.id, payload, { signal: currentSignal() })) as CloudBook;
   } else {
-    cloud = (await pb.collection("books").create(payload)) as CloudBook;
+    cloud = (await pb
+      .collection("books")
+      .create(payload, { signal: currentSignal() })) as CloudBook;
   }
 
   const latest = (await local.getBook(bookId)) ?? book;
@@ -380,21 +420,29 @@ async function pushAnnotationsForCloudBook(
   try {
     row = (await pb
       .collection("annotations")
-      .getFirstListItem(`book = "${cloudBookId}"`)) as CloudAnnotation;
-  } catch {
+      .getFirstListItem(`book = "${cloudBookId}"`, {
+        signal: currentSignal(),
+      })) as CloudAnnotation;
+  } catch (e) {
+    if (isAbortLike(e)) throw e;
     row = null;
   }
 
   if (row) {
     const cloudUpdated = (row.updated as string) || "";
     if (cloudUpdated && !newer(localUpdatedAt, cloudUpdated)) return;
-    await pb.collection("annotations").update(row.id, { data });
+    await pb
+      .collection("annotations")
+      .update(row.id, { data }, { signal: currentSignal() });
   } else {
-    await pb.collection("annotations").create({
-      user: userId,
-      book: cloudBookId,
-      data,
-    });
+    await pb.collection("annotations").create(
+      {
+        user: userId,
+        book: cloudBookId,
+        data,
+      },
+      { signal: currentSignal() },
+    );
   }
 }
 
@@ -422,6 +470,7 @@ export async function pushCollections(): Promise<void> {
   const localCols = await local.listCollections();
   const cloudList = await pb.collection("library_collections").getFullList<CloudCollection>({
     filter: `user = "${userId}"`,
+    signal: currentSignal(),
   });
   const byLocal = new Map(cloudList.map((c) => [c.local_id, c]));
 
@@ -435,11 +484,15 @@ export async function pushCollections(): Promise<void> {
     };
     if (existing) {
       if (existing.name !== col.name) {
-        await pb.collection("library_collections").update(existing.id, payload);
+        await pb
+          .collection("library_collections")
+          .update(existing.id, payload, { signal: currentSignal() });
       }
       byLocal.delete(col.id);
     } else {
-      await pb.collection("library_collections").create(payload);
+      await pb
+        .collection("library_collections")
+        .create(payload, { signal: currentSignal() });
     }
   }
 
@@ -469,19 +522,21 @@ export async function pullAndMerge(): Promise<void> {
   }
   if (syncInFlight) return syncInFlight;
 
-  cancelRequested = false;
   fileToken = null;
+  const gen = generation;
   syncInFlight = (async () => {
-    setStatus("syncing");
-    setProgress({ phase: "catalog", done: 0, total: 0 });
+    setStatus("syncing", undefined, gen);
+    setProgress({ phase: "catalog", done: 0, total: 0 }, gen);
     try {
       const pb = getPb();
       const [cloudBooks, cloudCols, localBooks, localCols] = await Promise.all([
         pb.collection("books").getFullList<CloudBook>({
           filter: `user = "${userId}"`,
+          signal: currentSignal(),
         }),
         pb.collection("library_collections").getFullList<CloudCollection>({
           filter: `user = "${userId}"`,
+          signal: currentSignal(),
         }),
         local.listBooks(),
         local.listCollections(),
@@ -514,6 +569,7 @@ export async function pullAndMerge(): Promise<void> {
       );
 
       for (const row of cloudBooks) {
+        checkpoint(gen);
         let match =
           (row.id && byCloudId.get(row.id)) ||
           (row.content_hash && byHash.get(row.content_hash)) ||
@@ -575,7 +631,9 @@ export async function pullAndMerge(): Promise<void> {
         try {
           const annRow = (await pb
             .collection("annotations")
-            .getFirstListItem(`book = "${row.id}"`)) as CloudAnnotation;
+            .getFirstListItem(`book = "${row.id}"`, {
+              signal: currentSignal(),
+            })) as CloudAnnotation;
           const remote = annRow.data;
           if (remote && typeof remote === "object") {
             const localAnn = await local.getAnnotations(match.id);
@@ -606,42 +664,42 @@ export async function pullAndMerge(): Promise<void> {
         }
       }
 
-      checkpoint();
+      checkpoint(gen);
       await pushCollections();
       const refreshed = await local.listBooks();
       for (const book of refreshed) {
-        checkpoint();
+        checkpoint(gen);
         await pushBook(book.id);
       }
-      checkpoint();
+      checkpoint(gen);
       // Book files are not downloaded here any more. The shelf needs only
       // metadata and covers; a file comes down when the book is opened, or
       // from "Download from cloud" in the cover menu.
       await local.evictStaleBookFiles();
-      checkpoint();
+      checkpoint(gen);
       const afterRestore = await local.listBooks();
       if (afterRestore.length === 0 && cloudBooks.length === 0) {
-        setProgress({ phase: "recover", done: 0, total: 0 });
+        setProgress({ phase: "recover", done: 0, total: 0 }, gen);
         await recoverBooksFromConnectedDisks((p) => {
-          setProgress({ phase: "recover", ...p });
-        }, stopRequested);
+          setProgress({ phase: "recover", ...p }, gen);
+        }, () => isStale(gen));
       }
 
-      setStatus("ok");
+      setStatus("ok", undefined, gen);
     } catch (e) {
-      if (e === CANCELLED || isAbortLike(e)) {
-        progress = null;
-        setStatus("idle");
+      if (isStale(gen)) return; // cancelled: cancelSync already set the line
+      if (isAbortLike(e)) {
+        setStatus("idle", undefined, gen);
         return;
       }
       console.error("[library-sync]", e);
       setStatus(
         "error",
         e instanceof Error ? e.message : "Sync failed",
+        gen,
       );
     } finally {
       syncInFlight = null;
-      cancelRequested = false;
     }
   })();
 
@@ -649,6 +707,8 @@ export async function pullAndMerge(): Promise<void> {
 }
 
 function isAbortLike(e: unknown): boolean {
+  if (e === CANCELLED) return true;
+  if ((e as { isAbort?: boolean } | null)?.isAbort === true) return true;
   if (!(e instanceof Error)) return false;
   const msg = e.message.toLowerCase();
   return (
@@ -682,34 +742,45 @@ async function flushPendingPush(): Promise<void> {
   const ids = [...pendingBookIds];
   pendingBookIds.clear();
   if (!ids.length) return;
-  setStatus("syncing");
-  try {
-    if (ids.includes("*")) {
+  const gen = generation;
+  setStatus("syncing", undefined, gen);
+  const run = (async () => {
+    try {
+      checkpoint(gen);
       await pushCollections();
-      const books = await local.listBooks();
-      for (const b of books) {
-        await pushBook(b.id);
+      const targets = ids.includes("*")
+        ? (await local.listBooks()).map((b) => b.id)
+        : ids.filter((id): id is string => id !== "*");
+      for (const id of targets) {
+        checkpoint(gen);
+        await pushBook(id);
       }
-    } else {
-      await pushCollections();
-      for (const id of ids) {
-        if (id !== "*") await pushBook(id);
+      setStatus("ok", undefined, gen);
+    } catch (e) {
+      // Cancelled by the reader: stop here. Retrying would undo the cancel;
+      // the edits are pushed again by the next full sync.
+      if (isStale(gen)) return;
+      if (isAbortLike(e)) {
+        // Benign race with another request — retry once shortly.
+        for (const id of ids) pendingBookIds.add(id);
+        if (pushTimer) clearTimeout(pushTimer);
+        pushTimer = setTimeout(() => {
+          void flushPendingPush();
+        }, 800);
+        return;
       }
+      console.error("[library-sync] push", e);
+      setStatus(
+        "error",
+        e instanceof Error ? e.message : "Sync failed",
+        gen,
+      );
+    } finally {
+      pushInFlight = null;
     }
-    setStatus("ok");
-  } catch (e) {
-    if (isAbortLike(e)) {
-      // Benign race — retry once shortly.
-      for (const id of ids) pendingBookIds.add(id);
-      if (pushTimer) clearTimeout(pushTimer);
-      pushTimer = setTimeout(() => {
-        void flushPendingPush();
-      }, 800);
-      return;
-    }
-    console.error("[library-sync] push", e);
-    setStatus("error", e instanceof Error ? e.message : "Sync failed");
-  }
+  })();
+  pushInFlight = run;
+  await run;
 }
 
 export async function runFullSync(): Promise<void> {
