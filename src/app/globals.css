@@ -5657,6 +5657,71 @@ body.is-selecting-books .library-main {
   white-space: nowrap;
 }
 
+.storage-cleaner {
+  margin: -0.3rem 0.45rem 0.65rem;
+}
+
+/* The size is the useful part and the sidebar is narrow: the label takes
+   its own row, and the button and info icon sit under it. */
+.storage-cleaner-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 0.4rem;
+  font-size: 0.72rem;
+  color: var(--ink-soft);
+}
+
+.storage-cleaner-label {
+  flex: 1 0 100%;
+}
+
+.storage-cleaner-info {
+  position: relative;
+  display: inline-flex;
+}
+
+.storage-cleaner-i {
+  display: grid;
+  place-items: center;
+  width: 1rem;
+  height: 1rem;
+  padding: 0;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-soft);
+  font: italic 600 0.62rem/1 Georgia, "Times New Roman", serif;
+  cursor: help;
+}
+
+.storage-cleaner-i:hover,
+.storage-cleaner-i[aria-expanded="true"] {
+  color: var(--ink);
+}
+
+/* Portalled to <body>; top/left come from the icon's position. */
+.storage-cleaner-tip {
+  position: fixed;
+  z-index: 60;
+  width: min(15rem, calc(100vw - 2rem));
+  pointer-events: none;
+  padding: 0.55rem 0.65rem;
+  border-radius: 10px;
+  background: rgba(28, 36, 48, 0.96);
+  color: #fff;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+}
+
+.storage-cleaner-note {
+  margin: 0.3rem 0 0;
+  font-size: 0.68rem;
+  line-height: 1.35;
+  color: var(--ink-soft);
+}
+
 .library-sync-btn {
   border: 0;
   background: transparent;

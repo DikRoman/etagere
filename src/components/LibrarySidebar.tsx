@@ -8,6 +8,7 @@ import { t } from "@/lib/i18n";
 import { collectionBookCount } from "@/lib/library-filters";
 import type { LibraryFilter } from "@/lib/types";
 import { SyncStatusLine } from "@/components/SyncStatusLine";
+import { StorageCleaner } from "@/components/StorageCleaner";
 import { dueVocabEntries, listVocabEntries } from "@/lib/vocab";
 
 function NavIcon({ name }: { name: string }) {
@@ -169,6 +170,7 @@ export function LibrarySidebar() {
       <div className="library-sidebar-section">
         <h2 className="library-sidebar-title">{t("librarySection", locale)}</h2>
         <SyncStatusLine />
+        <StorageCleaner />
         <ul className="library-nav">
           {libraryItems.map((item) => (
             <li key={item.filter.kind}>

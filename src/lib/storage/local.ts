@@ -333,6 +333,65 @@ export async function deleteLocalBookFile(book: BookMeta): Promise<void> {
   await txDone(tx);
 }
 
+export type StoredFilesStats = {
+  /** Book files held in this browser. */
+  count: number;
+  bytes: number;
+  /** Of those, files with no copy on any cloud disk: clearing would lose them. */
+  onlyHere: number;
+};
+
+export type ClearFilesResult = {
+  cleared: number;
+  freedBytes: number;
+  /** Kept because this browser holds the only copy. */
+  kept: number;
+};
+
+async function storedFileSize(book: BookMeta): Promise<number> {
+  const blob = await getPdfBlob(book.id);
+  return blob?.size || book.sizeBytes || 0;
+}
+
+/** What "clear memory" would touch, for the line next to the button. */
+export async function storedFilesStats(): Promise<StoredFilesStats> {
+  const books = await listBooks();
+  const stats: StoredFilesStats = { count: 0, bytes: 0, onlyHere: 0 };
+  for (const book of books) {
+    if (!(await hasLocalBookFile(book.id))) continue;
+    stats.count += 1;
+    stats.bytes += await storedFileSize(book);
+    if (!hasCloudBookCopy(book)) stats.onlyHere += 1;
+  }
+  return stats;
+}
+
+/**
+ * Drop downloaded book files from this browser, keeping everything that
+ * describes them — title, cover, progress, bookmarks, notes, ink. A book is
+ * fetched again from its disk when opened.
+ *
+ * Files with no copy on any cloud disk are left alone: this browser is the
+ * only place they exist, and deleting them would lose the book for good.
+ */
+export async function clearDownloadedBookFiles(): Promise<ClearFilesResult> {
+  const books = await listBooks();
+  const result: ClearFilesResult = { cleared: 0, freedBytes: 0, kept: 0 };
+  for (const book of books) {
+    if (!(await hasLocalBookFile(book.id))) continue;
+    if (!hasCloudBookCopy(book)) {
+      result.kept += 1;
+      continue;
+    }
+    const size = await storedFileSize(book);
+    await deleteLocalBookFile(book);
+    await saveBook({ ...book, missingLocalFile: true });
+    result.cleared += 1;
+    result.freedBytes += size;
+  }
+  return result;
+}
+
 export async function touchBookOpened(
   bookId: string,
   at = new Date(),

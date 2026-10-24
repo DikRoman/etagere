@@ -135,6 +135,7 @@ interface LibraryStore {
   setReadingStatus: (bookId: string, status: ReadingStatus) => Promise<void>;
   restoreCover: (bookId: string) => Promise<void>;
   refreshCover: (bookId: string) => Promise<boolean>;
+  clearBookFiles: () => Promise<local.ClearFilesResult>;
   downloadBookFromCloud: (bookId: string) => Promise<boolean>;
   connectDrive: () => Promise<string>;
   refreshDriveFlag: () => void;
@@ -551,6 +552,12 @@ export const useLibraryStore = create<LibraryStore>((set, get) => ({
     set({
       books: get().books.map((b) => (b.id === bookId ? next : b)),
     });
+  },
+
+  clearBookFiles: async () => {
+    const result = await local.clearDownloadedBookFiles();
+    await get().hydrate();
+    return result;
   },
 
   refreshCover: async (bookId) => {
