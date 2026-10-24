@@ -54,6 +54,7 @@ sleep 2
 systemctl is-active etagere-web
 systemctl list-timers etagere-billing.timer --no-pager
 curl -sI -o /dev/null -w 'pdf.worker %{http_code}\\n' http://127.0.0.1:3000/pdf.worker.min.mjs
+curl -sI -o /dev/null -w 'pdfjs wasm %{http_code}\\n' http://127.0.0.1:3000/pdfjs/wasm/openjpeg.wasm
 curl -sI -o /dev/null -w 'mark.svg %{http_code}\\n' http://127.0.0.1:3000/brand/mark.svg
 "
 

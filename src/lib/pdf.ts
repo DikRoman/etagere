@@ -15,12 +15,26 @@ async function pdfjs() {
   return mod;
 }
 
+/**
+ * pdf.js loads some decoders on demand. Without these URLs, JPEG 2000 and
+ * JBIG2 images — common in publisher textbooks — render as blank space, and
+ * CJK text or the standard fonts can come out wrong. The files are copied
+ * into public/pdfjs by scripts/copy-pdfjs-assets.mjs.
+ */
+const PDFJS_ASSETS = {
+  wasmUrl: "/pdfjs/wasm/",
+  iccUrl: "/pdfjs/iccs/",
+  cMapUrl: "/pdfjs/cmaps/",
+  cMapPacked: true,
+  standardFontDataUrl: "/pdfjs/standard_fonts/",
+};
+
 export async function loadPdf(
   data: ArrayBuffer | Uint8Array,
 ): Promise<PDFDocumentProxy> {
   const { getDocument } = await pdfjs();
   const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
-  return getDocument({ data: bytes }).promise;
+  return getDocument({ data: bytes, ...PDFJS_ASSETS }).promise;
 }
 
 export async function extractCoverDataUrl(

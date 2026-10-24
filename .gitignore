@@ -50,3 +50,5 @@ next-env.d.ts
 ios/**/xcuserdata/
 ios/DerivedData/
 
+# pdf.js runtime assets, copied from node_modules on dev/build
+/public/pdfjs/
