@@ -563,21 +563,44 @@ export function BookCover({ book, index, part = "cover" }: BookCoverProps) {
             {isNew ? t("newBadge", locale) : `${progress}%`}
           </p>
         </div>
-        <button
-          ref={menuBtnRef}
-          type="button"
-          className="book-menu-btn"
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
-          aria-label={t("bookMenu", locale)}
-          onClick={openMenu}
-        >
-          <svg viewBox="0 0 24 12" width="16" height="8" aria-hidden>
-            <circle cx="4" cy="6" r="1.7" fill="currentColor" />
-            <circle cx="12" cy="6" r="1.7" fill="currentColor" />
-            <circle cx="20" cy="6" r="1.7" fill="currentColor" />
-          </svg>
-        </button>
+        <div className="book-foot-side">
+          <button
+            ref={menuBtnRef}
+            type="button"
+            className="book-menu-btn"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            aria-label={t("bookMenu", locale)}
+            onClick={openMenu}
+          >
+            <svg viewBox="0 0 24 12" width="16" height="8" aria-hidden>
+              <circle cx="4" cy="6" r="1.7" fill="currentColor" />
+              <circle cx="12" cy="6" r="1.7" fill="currentColor" />
+              <circle cx="20" cy="6" r="1.7" fill="currentColor" />
+            </svg>
+          </button>
+          {/* In the cloud but not on this device: a dashed cloud. */}
+          {book.missingLocalFile &&
+            (book.hasCloudFile || book.driveFileId || book.cloudFileId) && (
+              <span
+                className="book-cloud"
+                role="img"
+                aria-label={t("inCloudNotDownloaded", locale)}
+                title={t("inCloudNotDownloaded", locale)}
+              >
+                <svg viewBox="0 0 24 16" width="17" height="12" aria-hidden>
+                  <path
+                    d="M6.6 14.2h10.6a3.6 3.6 0 0 0 .5-7.17 5.1 5.1 0 0 0-9.8-1.3A4.25 4.25 0 0 0 6.6 14.2Z"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeDasharray="2.2 1.8"
+                  />
+                </svg>
+              </span>
+            )}
+        </div>
       </div>
       {menu}
     </article>

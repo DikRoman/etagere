@@ -1322,6 +1322,24 @@ body.is-dragging-book .library-nav-collection {
   color: var(--ink-soft);
 }
 
+/* The menu dots, with the not-downloaded cloud stacked under them. */
+.book-foot-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.book-cloud {
+  display: grid;
+  place-items: center;
+  width: 1.55rem;
+  height: 0.95rem;
+  color: var(--ink-soft);
+  opacity: 0.85;
+}
+
 .book-menu-btn {
   flex-shrink: 0;
   width: 1.55rem;

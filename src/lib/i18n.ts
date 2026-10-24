@@ -77,6 +77,10 @@ const dict = {
   highlightPalette: { ru: "Все цвета", en: "All colours" },
   highlightWith: { ru: "Выделить цветом", en: "Highlight in" },
   otherColor: { ru: "Другой цвет", en: "Other colour" },
+  inCloudNotDownloaded: {
+    ru: "В облаке, не загружена на устройство",
+    en: "In the cloud, not on this device",
+  },
   downloadFromCloud: {
     ru: "Загрузить из облака",
     en: "Download from cloud",
