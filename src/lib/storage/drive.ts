@@ -8,6 +8,7 @@
  * it, so the connection died every hour.
  */
 
+import { readWithProgress, type DownloadProgress } from "@/lib/fetch-progress";
 import {
   disconnectProvider,
   ensureAccessToken,
@@ -485,6 +486,7 @@ async function driveDownload(
 async function driveDownloadViaProxy(
   fileId: string,
   token: string,
+  onProgress?: DownloadProgress,
 ): Promise<{ blob: Blob; name: string; mimeType: string } | "unauthorized" | null> {
   const res = await fetch(
     `/api/cloud/gdrive/file?id=${encodeURIComponent(fileId)}`,
@@ -495,7 +497,7 @@ async function driveDownloadViaProxy(
   if (!res.ok) {
     throw new Error(`Не удалось скачать файл (${res.status}).`);
   }
-  const blob = await res.blob();
+  const blob = await readWithProgress(res, onProgress);
   if (blob.size < 1) return null;
   if (blob.type.includes("text/html") && blob.size < 512_000) {
     throw new Error(
@@ -518,6 +520,7 @@ async function driveDownloadViaProxy(
 
 export async function downloadDriveFile(
   fileId: string,
+  onProgress?: DownloadProgress,
 ): Promise<{ blob: Blob; name: string; mimeType: string }> {
   // Renewal is silent now, so this is safe to call from background sync.
   let token: string | null = null;
@@ -528,7 +531,7 @@ export async function downloadDriveFile(
   }
 
   if (token) {
-    const viaProxy = await driveDownloadViaProxy(fileId, token);
+    const viaProxy = await driveDownloadViaProxy(fileId, token, onProgress);
     if (viaProxy && viaProxy !== "unauthorized") return viaProxy;
   }
 

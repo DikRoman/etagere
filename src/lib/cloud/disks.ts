@@ -1,4 +1,5 @@
 import type { BookMeta } from "@/lib/types";
+import { readWithProgress, type DownloadProgress } from "@/lib/fetch-progress";
 import {
   downloadDriveFile,
   isDriveConnected,
@@ -51,7 +52,11 @@ async function yandexUpload(
   return name;
 }
 
-async function yandexDownload(token: string, pathName: string): Promise<Blob> {
+async function yandexDownload(
+  token: string,
+  pathName: string,
+  onProgress?: DownloadProgress,
+): Promise<Blob> {
   const diskPath = pathName.startsWith("app:")
     ? pathName
     : `app:/${pathName}`;
@@ -64,7 +69,7 @@ async function yandexDownload(token: string, pathName: string): Promise<Blob> {
   if (!href) throw new Error("Yandex download href missing");
   const file = await fetch(href);
   if (!file.ok) throw new Error(`Yandex file ${file.status}`);
-  return file.blob();
+  return readWithProgress(file, onProgress);
 }
 
 export async function listYandexBooks(): Promise<CloudPick[]> {
@@ -116,7 +121,11 @@ async function dropboxUpload(
   return data.id || data.path_lower || `/${name}`;
 }
 
-async function dropboxDownload(token: string, pathOrId: string): Promise<Blob> {
+async function dropboxDownload(
+  token: string,
+  pathOrId: string,
+  onProgress?: DownloadProgress,
+): Promise<Blob> {
   const arg = pathOrId.startsWith("id:")
     ? { path: pathOrId }
     : { path: pathOrId.startsWith("/") ? pathOrId : `/${pathOrId}` };
@@ -128,7 +137,7 @@ async function dropboxDownload(token: string, pathOrId: string): Promise<Blob> {
     },
   });
   if (!res.ok) throw new Error(`Dropbox download ${res.status}`);
-  return res.blob();
+  return readWithProgress(res, onProgress);
 }
 
 export async function listDropboxBooks(): Promise<CloudPick[]> {
@@ -179,13 +188,17 @@ async function onedriveUpload(
   return data.id;
 }
 
-async function onedriveDownload(token: string, id: string): Promise<Blob> {
+async function onedriveDownload(
+  token: string,
+  id: string,
+  onProgress?: DownloadProgress,
+): Promise<Blob> {
   const res = await fetch(
     `https://graph.microsoft.com/v1.0/me/drive/items/${encodeURIComponent(id)}/content`,
     { headers: { Authorization: `Bearer ${token}` } },
   );
   if (!res.ok) throw new Error(`OneDrive download ${res.status}`);
-  return res.blob();
+  return readWithProgress(res, onProgress);
 }
 
 export async function listOnedriveBooks(): Promise<CloudPick[]> {
@@ -218,6 +231,7 @@ export async function listCloudBooks(
 
 export async function downloadFromCloudDisks(
   book: BookMeta,
+  onProgress?: DownloadProgress,
 ): Promise<{ blob: Blob; provider: CloudProvider; fileId: string } | null> {
   const tries: { provider: CloudProvider; fileId: string }[] = [];
   if (book.cloudProvider && book.cloudFileId) {
@@ -230,7 +244,7 @@ export async function downloadFromCloudDisks(
   for (const tryOne of tries) {
     try {
       if (tryOne.provider === "gdrive") {
-        const { blob } = await downloadDriveFile(tryOne.fileId);
+        const { blob } = await downloadDriveFile(tryOne.fileId, onProgress);
         if (blob.size > 0)
           return { blob, provider: "gdrive", fileId: tryOne.fileId };
         continue;
@@ -239,11 +253,11 @@ export async function downloadFromCloudDisks(
       if (!token) continue;
       let blob: Blob | null = null;
       if (tryOne.provider === "yandex")
-        blob = await yandexDownload(token, tryOne.fileId);
+        blob = await yandexDownload(token, tryOne.fileId, onProgress);
       else if (tryOne.provider === "dropbox")
-        blob = await dropboxDownload(token, tryOne.fileId);
+        blob = await dropboxDownload(token, tryOne.fileId, onProgress);
       else if (tryOne.provider === "onedrive")
-        blob = await onedriveDownload(token, tryOne.fileId);
+        blob = await onedriveDownload(token, tryOne.fileId, onProgress);
       if (blob && blob.size > 0)
         return { blob, provider: tryOne.provider, fileId: tryOne.fileId };
     } catch (e) {

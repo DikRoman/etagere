@@ -12,6 +12,7 @@ import { useLibraryStore } from "@/store/library";
 import { ReaderToolbar } from "@/components/reader/ReaderToolbar";
 import { ReaderSidebar } from "@/components/reader/ReaderSidebar";
 import { SelectionMenu } from "@/components/reader/SelectionMenu";
+import { BookLoader } from "@/components/reader/BookLoader";
 import { AiPanel } from "@/components/reader/AiPanel";
 import { useSettingsStore } from "@/store/settings";
 import { t } from "@/lib/i18n";
@@ -43,6 +44,7 @@ export default function ReaderPage() {
   const [book, setBookMeta] = useState<BookMeta | null>(null);
   const [missing, setMissing] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [progress, setProgress] = useState({ loaded: 0, total: 0 });
   const [restoreError, setRestoreError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   useReaderWheelZoom();
@@ -99,8 +101,11 @@ export default function ReaderPage() {
       }
 
       setBookMeta(meta);
+      setProgress({ loaded: 0, total: 0 });
       setDownloading(true);
-      const restored = await ensureLocalBookFile(meta);
+      const restored = await ensureLocalBookFile(meta, (loaded, total) => {
+        if (!cancelled) setProgress({ loaded, total });
+      });
       if (cancelled) return;
       setDownloading(false);
       if (restored) {
@@ -159,7 +164,10 @@ export default function ReaderPage() {
     setDownloading(true);
     setRestoreError(null);
     try {
-      const restored = await ensureLocalBookFile(book);
+      setProgress({ loaded: 0, total: 0 });
+      const restored = await ensureLocalBookFile(book, (loaded, total) =>
+        setProgress({ loaded, total }),
+      );
       if (restored) {
         window.location.reload();
         return;
@@ -203,10 +211,13 @@ export default function ReaderPage() {
 
   if (downloading && !missing) {
     return (
-      <div className="pdf-loading">
-        {t("downloadingBook", locale)}
-        {book?.title ? ` — ${book.title}` : ""}
-      </div>
+      <BookLoader
+        loaded={progress.loaded}
+        // The shelf knows the file size even when the response does not say.
+        total={progress.total || book?.sizeBytes || 0}
+        title={book?.title}
+        locale={locale}
+      />
     );
   }
 

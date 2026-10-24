@@ -7646,3 +7646,179 @@ html[data-theme="night"] .add-book-sheet {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* ===================== Book download: the shelf cat ===================== */
+.book-loader {
+  min-height: 100dvh;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 0.35rem;
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--ink);
+}
+
+.book-loader-scene {
+  width: min(340px, 86vw);
+  height: auto;
+  overflow: visible;
+}
+
+.book-loader-percent {
+  margin: 0.4rem 0 0;
+  font-size: 2.2rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.book-loader-title {
+  margin: 0;
+  max-width: 28rem;
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.book-loader-bytes {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.bl-shelf {
+  fill: var(--wood);
+}
+
+.bl-bracket {
+  fill: var(--wood-light);
+}
+
+.bl-book {
+  transform-box: fill-box;
+  transform-origin: left bottom;
+  transition:
+    transform 0.75s cubic-bezier(0.55, 0, 0.85, 0.35),
+    opacity 0.45s ease 0.35s;
+}
+
+/* Tipped over by the paw, then down off the front of the shelf. */
+.bl-book.is-down {
+  transform: translate(-10px, 78px) rotate(var(--tilt, -90deg));
+  opacity: 0;
+}
+
+.bl-cat {
+  transition: transform 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.bl-fur {
+  fill: #f0a35e;
+}
+
+.bl-stripe {
+  fill: none;
+  stroke: #d9813a;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.bl-ear-in {
+  fill: #f7c9a0;
+}
+
+.bl-eye {
+  fill: #2b2b2b;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: blBlink 3.6s infinite;
+}
+
+.bl-nose {
+  fill: #e17a8a;
+}
+
+.bl-tail {
+  fill: #f0a35e;
+  transform-box: fill-box;
+  transform-origin: left top;
+  animation: blTail 2.4s ease-in-out infinite alternate;
+}
+
+/* The swat: wind up, sweep left, recover. */
+.bl-paw {
+  transform-box: fill-box;
+  transform-origin: right center;
+  animation: blSwat 1.1s ease-in-out infinite;
+}
+
+.bl-head {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+  animation: blHead 1.1s ease-in-out infinite;
+}
+
+@keyframes blSwat {
+  0%,
+  45% {
+    transform: rotate(0deg);
+  }
+  60% {
+    transform: rotate(28deg);
+  }
+  75% {
+    transform: translateX(-4px) rotate(-22deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes blHead {
+  0%,
+  50%,
+  100% {
+    transform: rotate(0deg);
+  }
+  72% {
+    transform: rotate(-5deg);
+  }
+}
+
+@keyframes blTail {
+  from {
+    transform: rotate(-6deg);
+  }
+  to {
+    transform: rotate(8deg);
+  }
+}
+
+@keyframes blBlink {
+  0%,
+  94%,
+  100% {
+    transform: scaleY(1);
+  }
+  97% {
+    transform: scaleY(0.1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bl-paw,
+  .bl-head,
+  .bl-tail,
+  .bl-eye {
+    animation: none;
+  }
+  .bl-book,
+  .bl-cat {
+    transition: opacity 0.3s ease;
+  }
+  .bl-book.is-down {
+    transform: none;
+  }
+}

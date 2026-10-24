@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
   }
 
   const metaRes = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,mimeType&supportsAllDrives=true`,
+    `https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,mimeType,size&supportsAllDrives=true`,
     { headers: { Authorization: `Bearer ${token}` } },
   );
   if (metaRes.status === 401) {
@@ -42,6 +42,7 @@ export async function GET(req: NextRequest) {
     id?: string;
     name?: string;
     mimeType?: string;
+    size?: string;
   };
   const mimeType = meta.mimeType || "application/pdf";
 
@@ -74,6 +75,9 @@ export async function GET(req: NextRequest) {
   headers.set("x-mime-type", outType);
   const length = fileRes.headers.get("content-length");
   if (length) headers.set("content-length", length);
+  // For the download progress bar: Content-Length is dropped or replaced
+  // when the response is compressed; this header is the file's real size.
+  if (meta.size && outType === mimeType) headers.set("x-file-size", meta.size);
 
   return new NextResponse(fileRes.body, { status: 200, headers });
 }

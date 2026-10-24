@@ -1,4 +1,5 @@
 import type { BookMeta } from "@/lib/types";
+import type { DownloadProgress } from "@/lib/fetch-progress";
 import * as local from "@/lib/storage/local";
 import {
   backupToCloudDisks,
@@ -47,7 +48,10 @@ async function metaFromFile(book: BookMeta): Promise<Partial<BookMeta>> {
   return patch;
 }
 
-export async function ensureLocalBookFile(book: BookMeta): Promise<boolean> {
+export async function ensureLocalBookFile(
+  book: BookMeta,
+  onProgress?: DownloadProgress,
+): Promise<boolean> {
   if (await local.hasLocalBookFile(book.id)) {
     if (book.missingLocalFile) {
       await local.saveBook({ ...book, missingLocalFile: false });
@@ -55,7 +59,7 @@ export async function ensureLocalBookFile(book: BookMeta): Promise<boolean> {
     return true;
   }
 
-  const got = await downloadFromCloudDisks(book);
+  const got = await downloadFromCloudDisks(book, onProgress);
   if (!got) return false;
 
   const file = new File([got.blob], bookFileName(book), {
