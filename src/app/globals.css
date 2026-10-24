@@ -2708,6 +2708,176 @@ html[data-theme="night"] .pdf-vocab-mark {
   white-space: nowrap;
 }
 
+/* —— Highlight palette —— */
+.selection-palette {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  --hl-ring: #fff;
+  animation: hlPopIn 0.16s ease both;
+}
+
+@keyframes hlPopIn {
+  from {
+    opacity: 0;
+    transform: scale(0.88);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* The grid is centred with translateX, so its keyframes must keep it. */
+@keyframes hlGridIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+}
+
+.selection-palette--below {
+  bottom: auto;
+  top: calc(100% + 14px);
+}
+
+.selection-palette .hl-palette {
+  padding: 0.4rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(28, 36, 48, 0.96);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 12px 30px rgba(0, 0, 0, 0.3);
+}
+
+.hl-palette {
+  position: relative;
+  --hl-ring: var(--hl-ring-color, #1c2430);
+}
+
+.selection-palette .hl-palette {
+  --hl-ring: #fff;
+}
+
+html[data-theme="night"] .hl-palette {
+  --hl-ring-color: #fff;
+}
+
+.hl-palette-slots {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.hl-slot {
+  width: 1.4rem;
+  height: 1.4rem;
+  padding: 0;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+.hl-slot:hover {
+  transform: scale(1.12);
+}
+
+.hl-slot.is-active {
+  box-shadow:
+    0 0 0 2px rgba(0, 0, 0, 0.25),
+    0 0 0 4px var(--hl-ring);
+}
+
+.hl-slot--all {
+  background: conic-gradient(
+    #ff4d6d,
+    #ffb703,
+    #ffd60a,
+    #34c759,
+    #32ade6,
+    #5e60ce,
+    #b5179e,
+    #ff4d6d
+  );
+}
+
+.hl-slot--all.is-open {
+  transform: scale(1.12);
+}
+
+.hl-grid {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  z-index: 2;
+  display: grid;
+  grid-template-columns: repeat(6, 1.55rem);
+  gap: 0.3rem;
+  padding: 0.55rem;
+  border-radius: 14px;
+  background: rgba(28, 36, 48, 0.97);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 16px 36px rgba(0, 0, 0, 0.34);
+  transform: translateX(-50%);
+  animation: hlGridIn 0.14s ease both;
+}
+
+.hl-palette--down .hl-grid {
+  bottom: auto;
+  top: calc(100% + 10px);
+}
+
+.hl-swatch {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  transition: transform 0.1s ease;
+}
+
+.hl-swatch:hover,
+.hl-swatch:focus-visible {
+  transform: scale(1.18);
+  z-index: 1;
+}
+
+.hl-swatch.is-active {
+  box-shadow:
+    inset 0 0 0 2px rgba(0, 0, 0, 0.35),
+    0 0 0 2px #fff;
+}
+
+.hl-swatch--custom {
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.hl-swatch--custom input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
 .selection-bubble-tail {
   position: absolute;
   left: 50%;
@@ -2770,7 +2940,173 @@ html[data-theme="night"] .pdf-vocab-mark {
 
 html[data-theme="night"] .selection-bubble-ring,
 html[data-theme="night"] .selection-bubble-note,
-html[data-theme="night"] .selection-bubble-tail {
+html[data-theme="night"] /* —— Highlight palette —— */
+.selection-palette {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  --hl-ring: #fff;
+  animation: hlPopIn 0.16s ease both;
+}
+
+@keyframes hlPopIn {
+  from {
+    opacity: 0;
+    transform: scale(0.88);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* The grid is centred with translateX, so its keyframes must keep it. */
+@keyframes hlGridIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+}
+
+.selection-palette--below {
+  bottom: auto;
+  top: calc(100% + 14px);
+}
+
+.selection-palette .hl-palette {
+  padding: 0.4rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(28, 36, 48, 0.96);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 12px 30px rgba(0, 0, 0, 0.3);
+}
+
+.hl-palette {
+  position: relative;
+  --hl-ring: var(--hl-ring-color, #1c2430);
+}
+
+.selection-palette .hl-palette {
+  --hl-ring: #fff;
+}
+
+.hl-palette-slots {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.hl-slot {
+  width: 1.4rem;
+  height: 1.4rem;
+  padding: 0;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+.hl-slot:hover {
+  transform: scale(1.12);
+}
+
+.hl-slot.is-active {
+  box-shadow:
+    0 0 0 2px rgba(0, 0, 0, 0.25),
+    0 0 0 4px var(--hl-ring);
+}
+
+.hl-slot--all {
+  background: conic-gradient(
+    #ff4d6d,
+    #ffb703,
+    #ffd60a,
+    #34c759,
+    #32ade6,
+    #5e60ce,
+    #b5179e,
+    #ff4d6d
+  );
+}
+
+.hl-slot--all.is-open {
+  transform: scale(1.12);
+}
+
+.hl-grid {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  z-index: 2;
+  display: grid;
+  grid-template-columns: repeat(6, 1.55rem);
+  gap: 0.3rem;
+  padding: 0.55rem;
+  border-radius: 14px;
+  background: rgba(28, 36, 48, 0.97);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 16px 36px rgba(0, 0, 0, 0.34);
+  transform: translateX(-50%);
+  animation: hlGridIn 0.14s ease both;
+}
+
+.hl-palette--down .hl-grid {
+  bottom: auto;
+  top: calc(100% + 10px);
+}
+
+.hl-swatch {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  transition: transform 0.1s ease;
+}
+
+.hl-swatch:hover,
+.hl-swatch:focus-visible {
+  transform: scale(1.18);
+  z-index: 1;
+}
+
+.hl-swatch.is-active {
+  box-shadow:
+    inset 0 0 0 2px rgba(0, 0, 0, 0.35),
+    0 0 0 2px #fff;
+}
+
+.hl-swatch--custom {
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.hl-swatch--custom input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.selection-bubble-tail {
   background: rgba(14, 18, 24, 0.98);
 }
 

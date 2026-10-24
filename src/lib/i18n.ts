@@ -74,6 +74,9 @@ const dict = {
     en: "Underline words already in your vocabulary",
   },
   refreshCover: { ru: "Обновить обложку", en: "Refresh cover" },
+  highlightPalette: { ru: "Все цвета", en: "All colours" },
+  highlightWith: { ru: "Выделить цветом", en: "Highlight in" },
+  otherColor: { ru: "Другой цвет", en: "Other colour" },
   downloadFromCloud: {
     ru: "Загрузить из облака",
     en: "Download from cloud",

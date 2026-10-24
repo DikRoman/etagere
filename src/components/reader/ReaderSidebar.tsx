@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState, useEffect } from "react";
+import { highlightFill } from "@/lib/highlight-color";
 import { useSettingsStore } from "@/store/settings";
 import { useReaderStore } from "@/store/reader";
 import { useAuthStore } from "@/store/auth";
@@ -8,7 +9,6 @@ import { t } from "@/lib/i18n";
 import { fetchAiQuota } from "@/lib/ai";
 import type { QuotaSnapshot } from "@/lib/ai-quota";
 import {
-  HIGHLIGHT_COLORS,
   SIDEBAR_WIDTH_DEFAULT,
   SIDEBAR_WIDTH_MAX,
   SIDEBAR_WIDTH_MIN,
@@ -235,7 +235,7 @@ export function ReaderSidebar({ bookTitle }: { bookTitle: string }) {
                       >
                         <span
                           className="dot"
-                          style={{ background: HIGHLIGHT_COLORS[h.color].fill }}
+                          style={{ background: highlightFill(h.color) }}
                         />
                         <span className="ann-text">{h.text}</span>
                         <span className="ann-page">p.{h.page}</span>

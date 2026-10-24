@@ -1,4 +1,8 @@
 import { create } from "zustand";
+import {
+  DEFAULT_HIGHLIGHT_SLOTS,
+  isHighlightColor,
+} from "@/lib/highlight-color";
 import { persist } from "zustand/middleware";
 import {
   EPUB_TYPOGRAPHY_DEFAULTS,
@@ -24,6 +28,7 @@ interface SettingsState {
   sidebarWidth: number;
   marginNotes: boolean;
   vocabMarks: boolean;
+  highlightSlots: string[];
   marginRatio: number;
   filmstripOpen: boolean;
   dailyGoal: number;
@@ -37,6 +42,7 @@ interface SettingsState {
   setSidebarWidth: (width: number) => void;
   setMarginNotes: (on: boolean) => void;
   setVocabMarks: (on: boolean) => void;
+  setHighlightSlot: (index: number, color: string) => void;
   setMarginRatio: (ratio: number) => void;
   setFilmstripOpen: (open: boolean) => void;
   setDailyGoal: (n: number) => void;
@@ -54,6 +60,7 @@ export const useSettingsStore = create<SettingsState>()(
       sidebarWidth: SIDEBAR_WIDTH_DEFAULT,
       marginNotes: true,
       vocabMarks: true,
+      highlightSlots: [...DEFAULT_HIGHLIGHT_SLOTS],
       marginRatio: MARGIN_RATIO_DEFAULT,
       filmstripOpen: false,
       dailyGoal: 20,
@@ -74,6 +81,12 @@ export const useSettingsStore = create<SettingsState>()(
         }),
       setMarginNotes: (marginNotes) => set({ marginNotes }),
       setVocabMarks: (vocabMarks) => set({ vocabMarks }),
+      setHighlightSlot: (index, color) =>
+        set((state) => {
+          const slots = [...state.highlightSlots];
+          slots[index] = color;
+          return { highlightSlots: slots };
+        }),
       setFilmstripOpen: (filmstripOpen) => set({ filmstripOpen }),
       setDailyGoal: (n) =>
         set({
@@ -99,6 +112,12 @@ export const useSettingsStore = create<SettingsState>()(
           // A zero margin used to mean "off"; the toggle owns that now.
           marginNotes: saved.marginNotes ?? (saved.marginRatio ?? 1) > 0,
           vocabMarks: saved.vocabMarks ?? true,
+          highlightSlots:
+            Array.isArray(saved.highlightSlots) &&
+            saved.highlightSlots.length === 3 &&
+            saved.highlightSlots.every(isHighlightColor)
+              ? saved.highlightSlots
+              : [...DEFAULT_HIGHLIGHT_SLOTS],
           marginRatio: Math.min(
             MARGIN_RATIO_MAX,
             Math.max(

@@ -125,7 +125,7 @@ interface ReaderStore {
   setSelection: (sel: ReaderStore["selection"]) => void;
   clearSelection: () => void;
   reloadAnnotations: () => Promise<void>;
-  addHighlightFromSelection: () => Promise<void>;
+  addHighlightFromSelection: (color?: HighlightColor) => Promise<void>;
   toggleBookmark: (page: number, label?: string) => Promise<void>;
   addQuoteFromSelection: () => Promise<void>;
   addNoteFromSelection: (body: string) => Promise<void>;
@@ -327,8 +327,9 @@ export const useReaderStore = create<ReaderStore>((set, get) => ({
     set({ annotations: await local.getAnnotations(bookId) });
   },
 
-  addHighlightFromSelection: async () => {
-    const { bookId, selection, activeColor } = get();
+  addHighlightFromSelection: async (color) => {
+    const { bookId, selection } = get();
+    const activeColor = color ?? get().activeColor;
     if (!bookId || !selection?.text) return;
     await local.addHighlight({
       id: crypto.randomUUID(),

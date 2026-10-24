@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { useSettingsStore } from "@/store/settings";
 import { useReaderStore } from "@/store/reader";
 import { t } from "@/lib/i18n";
-import { HIGHLIGHT_COLORS } from "@/lib/types";
+import { highlightSolid } from "@/lib/highlight-color";
+import { HighlightPalette } from "./HighlightPalette";
 import { lookupSelection } from "@/lib/ai";
 import { isLookupSelection } from "@/lib/word-lookup";
 
@@ -86,11 +87,33 @@ export function SelectionMenu() {
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteText, setNoteText] = useState("");
   const noteRef = useRef<HTMLTextAreaElement>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const paletteTimer = useRef<number | null>(null);
 
   useEffect(() => {
     setNoteOpen(false);
     setNoteText("");
+    setPaletteOpen(false);
   }, [selection?.text, selection?.page]);
+
+  useEffect(
+    () => () => {
+      if (paletteTimer.current) window.clearTimeout(paletteTimer.current);
+    },
+    [],
+  );
+
+  // Hovering "Highlight" shows the colours; a grace period lets the pointer
+  // cross from the button into the palette without it vanishing.
+  const openPalette = () => {
+    if (paletteTimer.current) window.clearTimeout(paletteTimer.current);
+    paletteTimer.current = null;
+    setPaletteOpen(true);
+  };
+  const closePaletteSoon = () => {
+    if (paletteTimer.current) window.clearTimeout(paletteTimer.current);
+    paletteTimer.current = window.setTimeout(() => setPaletteOpen(false), 260);
+  };
 
   useEffect(() => {
     if (noteOpen) noteRef.current?.focus();
@@ -104,6 +127,9 @@ export function SelectionMenu() {
     Math.max(bubbleW / 2 + 12, selection.screen.x),
   );
   const top = Math.max(72, selection.screen.y - 14);
+  // The bubble sits above the selection; put the palette above it when the
+  // full grid fits, otherwise below, where it covers the text instead.
+  const paletteAbove = top - 64 > 250;
 
   async function translate() {
     const text = selection!.text;
@@ -150,7 +176,7 @@ export function SelectionMenu() {
       id: "highlight",
       label: t("highlight", locale),
       icon: <IconHighlight />,
-      accent: HIGHLIGHT_COLORS[activeColor].fill,
+      accent: highlightSolid(activeColor),
       onClick: () => void addHighlightFromSelection(),
     },
     {
@@ -202,6 +228,9 @@ export function SelectionMenu() {
             title={action.label}
             aria-label={action.label}
             onClick={action.onClick}
+            onMouseEnter={action.id === "highlight" ? openPalette : undefined}
+            onMouseLeave={action.id === "highlight" ? closePaletteSoon : undefined}
+            onFocus={action.id === "highlight" ? openPalette : undefined}
             style={
               "accent" in action
                 ? ({ "--bubble-accent": action.accent } as React.CSSProperties)
@@ -213,6 +242,20 @@ export function SelectionMenu() {
           </button>
         ))}
       </div>
+
+      {paletteOpen && !noteOpen && (
+        <div
+          className={`selection-palette ${paletteAbove ? "" : "selection-palette--below"}`}
+          onMouseEnter={openPalette}
+          onMouseLeave={closePaletteSoon}
+        >
+          <HighlightPalette
+            gridOpenOn="hover"
+            dropDown={!paletteAbove}
+            onPick={(color) => void addHighlightFromSelection(color)}
+          />
+        </div>
+      )}
 
       {noteOpen && (
         <div className="selection-bubble-note">

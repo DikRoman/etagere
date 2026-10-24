@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { highlightFill } from "@/lib/highlight-color";
 import type { PDFDocumentProxy, PageViewport } from "pdfjs-dist";
 import { renderPdfTextLayer } from "@/lib/pdf";
 import { useReaderStore } from "@/store/reader";
 import { useSettingsStore } from "@/store/settings";
-import { HIGHLIGHT_COLORS, QUOTE_MARKER, NOTE_MARKER } from "@/lib/types";
+import { QUOTE_MARKER, NOTE_MARKER } from "@/lib/types";
 import { MARGIN_GUTTER_PX } from "@/lib/ink-space";
 import { InkLayer } from "./InkLayer";
 import { MarginTextLayer } from "./MarginTextLayer";
@@ -153,7 +154,7 @@ export function PdfPage({
                         top: `${r.y * 100}%`,
                         width: `${r.width * 100}%`,
                         height: `${r.height * 100}%`,
-                        background: HIGHLIGHT_COLORS[h.color].fill,
+                        background: highlightFill(h.color),
                       }}
                     />
                   )),

@@ -1,6 +1,9 @@
 export type Locale = "ru" | "en";
 export type ReaderTheme = "day" | "paper" | "night";
-export type HighlightColor = "yellow" | "green" | "blue" | "coral";
+/** The original four named colours; still valid, still rendered identically. */
+export type LegacyHighlightColor = "yellow" | "green" | "blue" | "coral";
+/** A named colour, or any "#rrggbb" chosen from the palette. */
+export type HighlightColor = LegacyHighlightColor | (string & {});
 export type ReaderTool = "select" | "pen" | "eraser" | "type";
 export type SidebarTab =
   "bookmarks" | "notes" | "toc" | "search" | "chat";
@@ -267,7 +270,7 @@ export interface BookMeta {
 }
 
 export const HIGHLIGHT_COLORS: Record<
-  HighlightColor,
+  LegacyHighlightColor,
   { fill: string; label: { ru: string; en: string } }
 > = {
   yellow: {

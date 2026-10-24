@@ -8,14 +8,13 @@ import { useReaderStore } from "@/store/reader";
 import { t, type MessageKey } from "@/lib/i18n";
 import {
   EPUB_FONT_STACKS,
-  HIGHLIGHT_COLORS,
   PEN_COLORS,
   type BookMeta,
   type EpubFontChoice,
-  type HighlightColor,
   type ReaderTool,
 } from "@/lib/types";
 import { EpubTypePanel } from "./EpubTypePanel";
+import { HighlightPalette } from "./HighlightPalette";
 import { MarginPanel } from "./MarginPanel";
 import { lookupSelection } from "@/lib/ai";
 import { isLookupSelection } from "@/lib/word-lookup";
@@ -134,8 +133,6 @@ export function ReaderToolbar({ title, pageCount, bookId, format }: Props) {
   const page = useReaderStore((s) => s.page);
   const scale = useReaderStore((s) => s.scale);
   const setScale = useReaderStore((s) => s.setScale);
-  const activeColor = useReaderStore((s) => s.activeColor);
-  const setActiveColor = useReaderStore((s) => s.setActiveColor);
   const tool = useReaderStore((s) => s.tool);
   const setTool = useReaderStore((s) => s.setTool);
   const penColor = useReaderStore((s) => s.penColor);
@@ -341,20 +338,10 @@ export function ReaderToolbar({ title, pageCount, bookId, format }: Props) {
       {toolBtn("eraser", t("eraser", locale))}
 
       {tool === "select" && (
+        // Same three colours as the selection menu; a click opens the full
+        // palette, so it works without hover on touch screens.
         <div className="color-row">
-          {(Object.keys(HIGHLIGHT_COLORS) as HighlightColor[]).map((c) => (
-            <button
-              key={c}
-              type="button"
-              className={`swatch ${activeColor === c ? "on" : ""}`}
-              style={{
-                background: HIGHLIGHT_COLORS[c].fill
-                  .replace("0.4", "0.9")
-                  .replace("0.45", "0.9"),
-              }}
-              onClick={() => setActiveColor(c)}
-            />
-          ))}
+          <HighlightPalette gridOpenOn="click" dropDown />
         </div>
       )}
 
