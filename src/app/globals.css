@@ -2670,7 +2670,7 @@ html[data-theme="night"] .pdf-vocab-mark {
 
 .selection-bubble-ring {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 0.1rem;
   padding: 0.35rem;
   border-radius: 999px;

@@ -5,6 +5,7 @@ import { useSettingsStore } from "@/store/settings";
 import { useReaderStore } from "@/store/reader";
 import { t } from "@/lib/i18n";
 import { highlightSolid } from "@/lib/highlight-color";
+import { copyText } from "@/lib/clipboard";
 import { HighlightPalette } from "./HighlightPalette";
 import { lookupSelection } from "@/lib/ai";
 import { isLookupSelection } from "@/lib/word-lookup";
@@ -21,6 +22,25 @@ function IconHighlight() {
         fill="currentColor"
         d="M15.2 4.6 5.4 18.2l-0.6 2.8 2.8-0.6L17.8 10.8a2.5 2.5 0 1 0-2.6-6.2Z"
       />
+    </svg>
+  );
+}
+
+function IconCopy() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden>
+      <path
+        fill="currentColor"
+        d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1Zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2Zm0 16H8V7h11v14Z"
+      />
+    </svg>
+  );
+}
+
+function IconCheck() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden>
+      <path fill="currentColor" d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2Z" />
     </svg>
   );
 }
@@ -89,12 +109,49 @@ export function SelectionMenu() {
   const noteRef = useRef<HTMLTextAreaElement>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const paletteTimer = useRef<number | null>(null);
+  // "button" closes the menu after a moment, like the other actions;
+  // Cmd/Ctrl+C ("key") keeps the selection, as copying usually does.
+  const [copied, setCopied] = useState<false | "button" | "key">(false);
 
   useEffect(() => {
     setNoteOpen(false);
     setNoteText("");
     setPaletteOpen(false);
+    setCopied(false);
   }, [selection?.text, selection?.page]);
+
+  useEffect(() => {
+    if (copied !== "button") return;
+    const id = window.setTimeout(() => clearSelection(), 700);
+    return () => window.clearTimeout(id);
+  }, [copied, clearSelection]);
+
+  // The PDF selection is drawn by the app, not the browser, so Cmd/Ctrl+C
+  // has nothing native to copy — handle it here. Match the physical key or
+  // the character: a Russian layout types Cyrillic "с" on KeyC, and some
+  // virtual keyboards and remote desktops send no code at all.
+  const selectedText = selection?.text;
+  useEffect(() => {
+    if (!selectedText) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      const isC = e.code === "KeyC" || ["c", "C", "с", "С"].includes(e.key);
+      if (!isC) return;
+      const target = e.target;
+      if (target instanceof Element && target.closest("input, textarea, [contenteditable=true]")) {
+        return;
+      }
+      // A real browser selection elsewhere (say, in the sidebar) copies natively.
+      const native = window.getSelection();
+      if (native && !native.isCollapsed && native.toString().trim()) return;
+      e.preventDefault();
+      void copyText(selectedText).then((ok) => {
+        if (ok) setCopied("key");
+      });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedText]);
 
   useEffect(
     () => () => {
@@ -121,7 +178,7 @@ export function SelectionMenu() {
 
   if (!selection) return null;
 
-  const bubbleW = noteOpen ? 240 : 248;
+  const bubbleW = noteOpen ? 240 : 296;
   const left = Math.min(
     window.innerWidth - bubbleW / 2 - 12,
     Math.max(bubbleW / 2 + 12, selection.screen.x),
@@ -157,6 +214,10 @@ export function SelectionMenu() {
     clearSelection();
   }
 
+  async function copySelection() {
+    if (await copyText(selection!.text)) setCopied("button");
+  }
+
   async function saveQuote() {
     await addQuoteFromSelection();
     setNoteOpen(false);
@@ -178,6 +239,12 @@ export function SelectionMenu() {
       icon: <IconHighlight />,
       accent: highlightSolid(activeColor),
       onClick: () => void addHighlightFromSelection(),
+    },
+    {
+      id: "copy",
+      label: copied ? t("copiedText", locale) : t("copyText", locale),
+      icon: copied ? <IconCheck /> : <IconCopy />,
+      onClick: () => void copySelection(),
     },
     {
       id: "quote",

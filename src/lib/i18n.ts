@@ -75,6 +75,8 @@ const dict = {
   },
   refreshCover: { ru: "Обновить обложку", en: "Refresh cover" },
   barShelf: { ru: "Полка", en: "Shelf" },
+  copyText: { ru: "Копировать", en: "Copy" },
+  copiedText: { ru: "Скопировано", en: "Copied" },
   barDraw: { ru: "Рисовать", en: "Draw" },
   barView: { ru: "Вид", en: "View" },
   barAi: { ru: "ИИ", en: "AI" },
